@@ -23,10 +23,6 @@ struct pty
 {
 	/* File descriptor of the pty */
 	int fd;
-#ifdef BROKEN_MASTER
-	/* File descriptor of the slave side of the pty. For broken systems. */
-	int slave;
-#endif
 	/* Process id of the child. */
 	pid_t pid;
 	/* The terminal parameters of the pty. Old and new for comparision
@@ -36,35 +32,17 @@ struct pty
 	struct winsize ws;
 };
 
-/* A connected client */
-struct client
-{
-	/* The next client in the linked list. */
-	struct client *next;
-	/* The previous client in the linked list. */
-	struct client **pprev;
-	/* File descriptor of the client. */
-	int fd;
-	/* Whether or not the client is attached. */
-	int attached;
-};
-
 /* The list of connected clients. */
-static struct client *clients;
+static int client_fd = -1;
 /* The pseudo-terminal created for the child process. */
 static struct pty the_pty;
+
+int bytes_dropped = 0;
 
 #ifndef HAVE_FORKPTY
 pid_t forkpty(int *amaster, char *name, struct termios *termp,
 	struct winsize *winp);
 #endif
-
-/* Unlink the socket */
-static void
-unlink_socket(void)
-{
-	unlink(sockname);
-}
 
 /* Signal */
 static RETSIGTYPE 
@@ -73,10 +51,6 @@ die(int sig)
 	/* Well, the child died. */
 	if (sig == SIGCHLD)
 	{
-#ifdef BROKEN_MASTER
-		/* Damn you Solaris! */
-		close(the_pty.fd);
-#endif
 		return;
 	}
 	exit(1);
@@ -114,10 +88,7 @@ init_pty(char **argv, int statusfd)
 	memset(&the_pty.ws, 0, sizeof(struct winsize));
 
 	/* Create the pty process */
-	if (!dont_have_tty)
-		the_pty.pid = forkpty(&the_pty.fd, NULL, &the_pty.term, NULL);
-	else
-		the_pty.pid = forkpty(&the_pty.fd, NULL, NULL, NULL);
+    the_pty.pid = forkpty(&the_pty.fd, NULL, &the_pty.term, NULL);
 	if (the_pty.pid < 0)
 		return -1;
 	else if (the_pty.pid == 0)
@@ -138,14 +109,6 @@ init_pty(char **argv, int statusfd)
 		_exit(127);
 	}
 	/* Parent.. Finish up and return */
-#ifdef BROKEN_MASTER
-	{
-		char *buf;
-
-		buf = ptsname(the_pty.fd);
-		the_pty.slave = open(buf, O_RDWR|O_NOCTTY);
-	}
-#endif
 	return 0;
 }
 
@@ -164,11 +127,6 @@ killpty(struct pty *pty, int sig)
 		return;
 #endif
 #ifdef TIOCGPGRP
-#ifdef BROKEN_MASTER
-	if (ioctl(pty->slave, TIOCGPGRP, &pgrp) >= 0 && pgrp != -1 &&
-		kill(-pgrp, sig) >= 0)
-		return;
-#endif
 	if (ioctl(pty->fd, TIOCGPGRP, &pgrp) >= 0 && pgrp != -1 &&
 		kill(-pgrp, sig) >= 0)
 		return;
@@ -178,77 +136,13 @@ killpty(struct pty *pty, int sig)
 	kill(-pty->pid, sig);
 }
 
-/* Creates a new unix domain socket. */
-static int
-create_socket(char *name)
-{
-	int s;
-	struct sockaddr_un sockun;
-
-	if (strlen(name) > sizeof(sockun.sun_path) - 1)
-	{
-		errno = ENAMETOOLONG;
-		return -1;
-	}
-
-	s = socket(PF_UNIX, SOCK_STREAM, 0);
-	if (s < 0)
-		return -1;
-	sockun.sun_family = AF_UNIX;
-	strcpy(sockun.sun_path, name);
-	if (bind(s, (struct sockaddr*)&sockun, sizeof(sockun)) < 0)
-	{
-		close(s);
-		return -1;
-	}
-	if (listen(s, 128) < 0)
-	{
-		close(s);
-		return -1;
-	}
-	if (setnonblocking(s) < 0)
-	{
-		close(s);
-		return -1;
-	}
-	/* chmod it to prevent any suprises */
-	if (chmod(name, 0600) < 0)
-	{
-		close(s);
-		return -1;
-	}
-	return s;
-}
-
-/* Update the modes on the socket. */
-static void
-update_socket_modes(int exec)
-{
-	struct stat st;
-	mode_t newmode;
-
-	if (stat(sockname, &st) < 0)
-		return;
-
-	if (exec)
-		newmode = st.st_mode | S_IXUSR;
-	else
-		newmode = st.st_mode & ~S_IXUSR;
-
-	if (st.st_mode != newmode)
-		chmod(sockname, newmode);
-}
-
 /* Process activity on the pty - Input and terminal changes are sent out to
 ** the attached clients. If the pty goes away, we die. */
 static void
-pty_activity(int s)
+pty_activity()
 {
 	unsigned char buf[BUFSIZE];
 	ssize_t len;
-	struct client *p;
-	fd_set readfds, writefds;
-	int highest_fd, nclients;
 
 	/* Read the pty activity */
 	len = read(the_pty.fd, buf, sizeof(buf));
@@ -257,120 +151,52 @@ pty_activity(int s)
 	if (len <= 0)
 		exit(1);
 
-#ifdef BROKEN_MASTER
-	/* Get the current terminal settings. */
-	if (tcgetattr(the_pty.slave, &the_pty.term) < 0)
-		exit(1);
-#else
 	/* Get the current terminal settings. */
 	if (tcgetattr(the_pty.fd, &the_pty.term) < 0)
 		exit(1);
-#endif
 
-top:
-	/*
-	** Wait until at least one client is writable. Also wait on the control
-	** socket in case a new client tries to connect.
-	*/
-	FD_ZERO(&readfds);
-	FD_ZERO(&writefds);
-	FD_SET(s, &readfds);
-	highest_fd = s;
-	for (p = clients, nclients = 0; p; p = p->next)
-	{
-		if (!p->attached)
-			continue;
-		FD_SET(p->fd, &writefds);
-		if (p->fd > highest_fd)
-			highest_fd = p->fd;
-		nclients++;
-	}
-	if (nclients == 0)
-		return;
-	if (select(highest_fd + 1, &readfds, &writefds, NULL, NULL) < 0)
-		return;
+    ssize_t written = 0;
+    while (written < len)
+    {
+        {
+            static int last_bytes_dropped = 0;
+            if (last_bytes_dropped != bytes_dropped) {
+                char str[64];
+                sprintf(str, "[%d dropped]", bytes_dropped);
+                if (write(client_fd, str, strlen(str)) > 0)
+                    last_bytes_dropped = bytes_dropped;
+            }
+        }
+        ssize_t n = write(client_fd, buf + written, len - written);
 
-	/* Send the data out to the clients. */
-	for (p = clients, nclients = 0; p; p = p->next)
-	{
-		ssize_t written;
+        if (n > 0)
+            written += n;
+        else if (n < 0 && errno == EINTR)
+            continue;
+        else
+            break;
+    }
 
-		if (!FD_ISSET(p->fd, &writefds))
-			continue;
-
-		written = 0;
-		while (written < len)
-		{
-			ssize_t n = write(p->fd, buf + written, len - written);
-
-			if (n > 0)
-			{
-				written += n;
-				continue;
-			}
-			else if (n < 0 && errno == EINTR)
-				continue;
-			else if (n < 0 && errno != EAGAIN)
-				nclients = -1;
-			break;
-		}
-		if (nclients != -1 && written == len)
-			nclients++;
-	}
-
-	/* Try again if nothing happened. */
-	if (!FD_ISSET(s, &readfds) && nclients == 0)
-		goto top;
-}
-
-/* Process activity on the control socket */
-static void
-control_activity(int s)
-{
-	int fd;
-	struct client *p;
- 
-	/* Accept the new client and link it in. */
-	fd = accept(s, NULL, NULL);
-	if (fd < 0)
-		return;
-	else if (setnonblocking(fd) < 0)
-	{
-		close(fd);
-		return;
-	}
-
-	/* Link it in. */
-	p = malloc(sizeof(struct client));
-	p->fd = fd;
-	p->attached = 0;
-	p->pprev = &clients;
-	p->next = *(p->pprev);
-	if (p->next)
-		p->next->pprev = &p->next;
-	*(p->pprev) = p;
+    bytes_dropped += (len - written);
 }
 
 /* Process activity from a client. */
 static void
-client_activity(struct client *p)
+client_activity()
 {
 	ssize_t len;
 	struct packet pkt;
 
 	/* Read the activity. */
-	len = read(p->fd, &pkt, sizeof(struct packet));
+    len = read(client_fd, &pkt, sizeof(struct packet));
 	if (len < 0 && (errno == EAGAIN || errno == EINTR))
 		return;
 
 	/* Close the client on an error. */
 	if (len <= 0)
 	{
-		close(p->fd);
-		if (p->next)
-			p->next->pprev = p->pprev;
-		*(p->pprev) = p->next;
-		free(p);
+        close(client_fd);
+        client_fd = -1;
 		return;
 	} 
 
@@ -380,12 +206,6 @@ client_activity(struct client *p)
 		if (pkt.len <= sizeof(pkt.u.buf))
 			write(the_pty.fd, pkt.u.buf, pkt.len);
 	}
-
-	/* Attach or detach from the program. */
-	else if (pkt.type == MSG_ATTACH)
-		p->attached = 1;
-	else if (pkt.type == MSG_DETACH)
-		p->attached = 0;
 
 	/* Window size change request, without a forced redraw. */
 	else if (pkt.type == MSG_WINCH)
@@ -433,21 +253,12 @@ client_activity(struct client *p)
 /* The master process - It watches over the pty process and the attached */
 /* clients. */
 static void
-master_process(int s, char **argv, int waitattach, int statusfd)
+master_process(char **argv, int statusfd)
 {
-	struct client *p, *next;
-	fd_set readfds;
-	int highest_fd;
-	int nullfd;
-
-	int has_attached_client = 0;
 
 	/* Okay, disassociate ourselves from the original terminal, as we
 	** don't care what happens to it. */
 	setsid();
-
-	/* Set a trap to unlink the socket when we die. */
-	atexit(unlink_socket);
 
 	/* Create a pty in which the process is running. */
 	signal(SIGCHLD, die);
@@ -477,7 +288,7 @@ master_process(int s, char **argv, int waitattach, int statusfd)
 
 	/* Make sure stdin/stdout/stderr point to /dev/null. We are now a
 	** daemon. */
-	nullfd = open("/dev/null", O_RDWR);
+    int nullfd = open("/dev/null", O_RDWR);
 	dup2(nullfd, 0);
 	dup2(nullfd, 1);
 	dup2(nullfd, 2);
@@ -487,45 +298,12 @@ master_process(int s, char **argv, int waitattach, int statusfd)
 	/* Loop forever. */
 	while (1)
 	{
-		int new_has_attached_client = 0;
-
 		/* Re-initialize the file descriptor set for select. */
-		FD_ZERO(&readfds);
-		FD_SET(s, &readfds);
-		highest_fd = s;
-
-		/*
-		** When waitattach is set, wait until the client attaches
-		** before trying to read from the pty.
-		*/
-		if (waitattach)
-		{
-			if (clients && clients->attached)
-				waitattach = 0;
-		}
-		else
-		{
-			FD_SET(the_pty.fd, &readfds);
-			if (the_pty.fd > highest_fd)
-				highest_fd = the_pty.fd;
-		}
-
-		for (p = clients; p; p = p->next)
-		{
-			FD_SET(p->fd, &readfds);
-			if (p->fd > highest_fd)
-				highest_fd = p->fd;
-
-			if (p->attached)
-				new_has_attached_client = 1;
-		}
-
-		/* chmod the socket if necessary. */
-		if (has_attached_client != new_has_attached_client)
-		{
-			update_socket_modes(new_has_attached_client);
-			has_attached_client = new_has_attached_client;
-		}
+        fd_set readfds;
+        FD_ZERO(&readfds);
+        FD_SET(client_fd, &readfds);
+        FD_SET(the_pty.fd, &readfds);
+        int highest_fd = client_fd > the_pty.fd ? client_fd : the_pty.fd;
 
 		/* Wait for something to happen. */
 		if (select(highest_fd + 1, &readfds, NULL, NULL, NULL) < 0)
@@ -535,78 +313,29 @@ master_process(int s, char **argv, int waitattach, int statusfd)
 			exit(1);
 		}
 
-		/* New client? */
-		if (FD_ISSET(s, &readfds))
-			control_activity(s);
-		/* Activity on a client? */
-		for (p = clients; p; p = next)
-		{
-			next = p->next;
-			if (FD_ISSET(p->fd, &readfds))
-				client_activity(p);
-		}
-		/* pty activity? */
+        /* Activity on a client? */
+        if (FD_ISSET(client_fd, &readfds))
+            client_activity();
+        /* pty activity? */
 		if (FD_ISSET(the_pty.fd, &readfds))
-			pty_activity(s);
+            pty_activity();
 	}
 }
 
 int
-master_main(char **argv, int waitattach, int dontfork)
+master_main(char **argv, int s)
 {
 	int fd[2] = {-1, -1};
-	int s;
 	pid_t pid;
 
 	/* Use a default redraw method if one hasn't been specified yet. */
 	if (redraw_method == REDRAW_UNSPEC)
 		redraw_method = REDRAW_CTRL_L;
 
-	/* Create the unix domain socket. */
-	s = create_socket(sockname);
-	if (s < 0 && errno == ENAMETOOLONG)
-	{
-		char *slash = strrchr(sockname, '/');
-
-		/* Try to shorten the socket's path name by using chdir. */
-		if (slash)
-		{
-			int dirfd = open(".", O_RDONLY);
-
-			if (dirfd >= 0)
-			{
-				*slash = '\0';
-				if (chdir(sockname) >= 0)
-				{
-					s = create_socket(slash + 1);
-					fchdir(dirfd);
-				}
-				*slash = '/';
-				close(dirfd);
-			}
-		}
-	}
-	if (s < 0)
-	{
-		printf("%s: %s: %s\n", progname, sockname, strerror(errno));
-		return 1;
-	}
-
 #if defined(F_SETFD) && defined(FD_CLOEXEC)
 	fcntl(s, F_SETFD, FD_CLOEXEC);
 
-	/* If FD_CLOEXEC works, create a pipe and use it to report any errors
-	** that occur while trying to execute the program. */
-	if (dontfork)
-	{
-		fd[1] = dup(2);
-		if (fcntl(fd[1], F_SETFD, FD_CLOEXEC) < 0)
-		{
-			close(fd[1]);
-			fd[1] = -1;
-		}
-	}
-	else if (pipe(fd) >= 0)
+    if (pipe(fd) >= 0)
 	{
 		if (fcntl(fd[0], F_SETFD, FD_CLOEXEC) < 0 ||
 		    fcntl(fd[1], F_SETFD, FD_CLOEXEC) < 0)
@@ -617,19 +346,14 @@ master_main(char **argv, int waitattach, int dontfork)
 		}
 	}
 #endif
-
-	if (dontfork)
-	{
-		master_process(s, argv, waitattach, fd[1]);
-		return 0;
-	}
+    setnonblocking(s);
+    client_fd = s;
 
 	/* Fork off so we can daemonize and such */
 	pid = fork();
 	if (pid < 0)
 	{
 		printf("%s: fork: %s\n", progname, strerror(errno));
-		unlink_socket();
 		return 1;
 	}
 	else if (pid == 0)
@@ -637,7 +361,7 @@ master_main(char **argv, int waitattach, int dontfork)
 		/* Child - this becomes the master */
 		if (fd[0] != -1)
 			close(fd[0]);
-		master_process(s, argv, waitattach, fd[1]);
+        master_process(argv, fd[1]);
 		return 0;
 	}
 	/* Parent - just return. */
@@ -663,138 +387,3 @@ master_main(char **argv, int waitattach, int dontfork)
 	close(s);
 	return 0;
 }
-
-/* BSDish functions for systems that don't have them. */
-#ifndef HAVE_OPENPTY
-#define HAVE_OPENPTY
-/* openpty: Use /dev/ptmx and Unix98 if we have it. */
-#if defined(HAVE_PTSNAME) && defined(HAVE_GRANTPT) && defined(HAVE_UNLOCKPT)
-int
-openpty(int *amaster, int *aslave, char *name, struct termios *termp,
-	struct winsize *winp)
-{
-	int master, slave;
-	char *buf;
-
-#ifdef _AIX
-	master = open("/dev/ptc", O_RDWR|O_NOCTTY);
-	if (master < 0)
-		return -1;
-	buf = ttyname(master);
-	if (!buf)
-		return -1;
-
-	slave = open(buf, O_RDWR|O_NOCTTY);
-	if (slave < 0)
-		return -1;
-#else
-	master = open("/dev/ptmx", O_RDWR);
-	if (master < 0)
-		return -1;
-	if (grantpt(master) < 0)
-		return -1;
-	if (unlockpt(master) < 0)
-		return -1;
-	buf = ptsname(master);
-	if (!buf)
-		return -1;
-
-	slave = open(buf, O_RDWR|O_NOCTTY);
-	if (slave < 0)
-		return -1;
-
-#ifdef I_PUSH
-	if (ioctl(slave, I_PUSH, "ptem") < 0)
-		return -1;
-	if (ioctl(slave, I_PUSH, "ldterm") < 0)
-		return -1;
-#endif
-#endif
-
-	*amaster = master;
-	*aslave = slave;
-	if (name)
-		strcpy(name, buf);
-	if (termp)
-		tcsetattr(slave, TCSAFLUSH, termp);
-	if (winp)
-		ioctl(slave, TIOCSWINSZ, winp);
-	return 0;
-}
-#else
-#error Do not know how to define openpty.
-#endif
-#endif
-
-#ifndef HAVE_FORKPTY
-#if defined(HAVE_OPENPTY)
-pid_t
-forkpty(int *amaster, char *name, struct termios *termp,
-	struct winsize *winp)
-{
-	pid_t pid;
-	int master, slave;
-
-	if (openpty(&master, &slave, name, termp, winp) < 0)
-		return -1;
-	*amaster = master;
-
-	/* Fork off... */
-	pid = fork();
-	if (pid < 0)
-		return -1;
-	else if (pid == 0)
-	{
-		char *buf;
-		int fd;
-
-		setsid();
-#ifdef TIOCSCTTY
-		buf = NULL;
-		if (ioctl(slave, TIOCSCTTY, NULL) < 0)
-			_exit(1);
-#elif defined(_AIX)
-		fd = open("/dev/tty", O_RDWR|O_NOCTTY);
-		if (fd >= 0)
-		{
-			ioctl(fd, TIOCNOTTY, NULL);
-			close(fd);
-		}
-
-		buf = ttyname(master);
-		fd = open(buf, O_RDWR);
-		close(fd);
-
-		fd = open("/dev/tty", O_WRONLY);
-		if (fd < 0)
-			_exit(1);
-		close(fd);
-
-		if (termp && tcsetattr(slave, TCSAFLUSH, termp) == -1)
-			_exit(1);
-		if (ioctl(slave, TIOCSWINSZ, winp) == -1)
-			_exit(1);
-#else
-		buf = ptsname(master);
-		fd = open(buf, O_RDWR);
-		close(fd);
-#endif
-		dup2(slave, 0);
-		dup2(slave, 1);
-		dup2(slave, 2);
-
-		if (slave > 2)
-			close(slave);
-		close(master);
-		return 0;
-	}
-	else
-	{
-		close(slave);
-		return pid;
-	}
-}
-#else
-#error Do not know how to define forkpty.
-#endif
-#endif

@@ -45,44 +45,6 @@ restore_term(void)
 	fflush(stdout);
 }
 
-/* Connects to a unix domain socket */
-static int
-connect_socket(char *name)
-{
-	int s;
-	struct sockaddr_un sockun;
-
-	if (strlen(name) > sizeof(sockun.sun_path) - 1)
-	{
-		errno = ENAMETOOLONG;
-		return -1;
-	}
-
-	s = socket(PF_UNIX, SOCK_STREAM, 0);
-	if (s < 0)
-		return -1;
-	sockun.sun_family = AF_UNIX;
-	strcpy(sockun.sun_path, name);
-	if (connect(s, (struct sockaddr*)&sockun, sizeof(sockun)) < 0)
-	{
-		close(s);
-
-		/* ECONNREFUSED is also returned for regular files, so make
-		** sure we are trying to connect to a socket. */
-		if (errno == ECONNREFUSED)
-		{
-			struct stat st;
-
-			if (stat(name, &st) < 0)
-				return -1;
-			else if (!S_ISSOCK(st.st_mode) || S_ISREG(st.st_mode))
-				errno = ENOTSOCK;
-		}
-		return -1;
-	}
-	return s;
-}
-
 /* Signal */
 static RETSIGTYPE
 die(int sig)
@@ -107,38 +69,8 @@ win_change()
 static void
 process_kbd(int s, struct packet *pkt)
 {
-	/* Suspend? */
-	if (!no_suspend && (pkt->u.buf[0] == cur_term.c_cc[VSUSP]))
-	{
-		/* Tell the master that we are suspending. */
-		pkt->type = MSG_DETACH;
-		write(s, pkt, sizeof(struct packet));
-
-		/* And suspend... */
-		tcsetattr(0, TCSADRAIN, &orig_term);
-		printf(EOS "\r\n");
-		kill(getpid(), SIGTSTP);
-		tcsetattr(0, TCSADRAIN, &cur_term);
-
-		/* Tell the master that we are returning. */
-		pkt->type = MSG_ATTACH;
-		write(s, pkt, sizeof(struct packet));
-
-		/* We would like a redraw, too. */
-		pkt->type = MSG_REDRAW;
-		pkt->len = redraw_method;
-		ioctl(0, TIOCGWINSZ, &pkt->u.ws);
-		write(s, pkt, sizeof(struct packet));
-		return;
-	}
-	/* Detach char? */
-	else if (pkt->u.buf[0] == detach_char)
-	{
-		printf(EOS "\r\n[detached]\r\n");
-		exit(0);
-	}
 	/* Just in case something pukes out. */
-	else if (pkt->u.buf[0] == '\f')
+    if (pkt->u.buf[0] == '\f')
 		win_changed = 1;
 
 	/* Push it out */
@@ -146,45 +78,11 @@ process_kbd(int s, struct packet *pkt)
 }
 
 int
-attach_main(int noerror)
+attach_main(int s)
 {
 	struct packet pkt;
 	unsigned char buf[BUFSIZE];
 	fd_set readfds;
-	int s;
-
-	/* Attempt to open the socket. Don't display an error if noerror is 
-	** set. */
-	s = connect_socket(sockname);
-	if (s < 0 && errno == ENAMETOOLONG)
-	{
-		char *slash = strrchr(sockname, '/');
-
-		/* Try to shorten the socket's path name by using chdir. */
-		if (slash)
-		{
-			int dirfd = open(".", O_RDONLY);
-
-			if (dirfd >= 0)
-			{
-				*slash = '\0';
-				if (chdir(sockname) >= 0)
-				{
-					s = connect_socket(slash + 1);
-					fchdir(dirfd);
-				}
-				*slash = '/';
-				close(dirfd);
-			}
-		}
-	}
-	if (s < 0)
-	{
-		if (!noerror)
-			printf("%s: %s: %s\n", progname, sockname,
-				strerror(errno));
-		return 1;
-	}
 
 	/* The current terminal settings are equal to the original terminal
 	** settings at this point. */
@@ -217,13 +115,9 @@ attach_main(int noerror)
 	/* Clear the screen. This assumes VT100. */
 	write(1, "\33[H\33[J", 6);
 
-	/* Tell the master that we want to attach. */
-	memset(&pkt, 0, sizeof(struct packet));
-	pkt.type = MSG_ATTACH;
-	write(s, &pkt, sizeof(struct packet));
-
-	/* We would like a redraw, too. */
-	pkt.type = MSG_REDRAW;
+    /* We would like a redraw. */
+    memset(&pkt, 0, sizeof(struct packet));
+    pkt.type = MSG_REDRAW;
 	pkt.len = redraw_method;
 	ioctl(0, TIOCGWINSZ, &pkt.u.ws);
 	write(s, &pkt, sizeof(struct packet));
@@ -291,71 +185,4 @@ attach_main(int noerror)
 		}
 	}
 	return 0;
-}
-
-int
-push_main()
-{
-	struct packet pkt;
-	int s;
-
-	/* Attempt to open the socket. */
-	s = connect_socket(sockname);
-	if (s < 0 && errno == ENAMETOOLONG)
-	{
-		char *slash = strrchr(sockname, '/');
-
-		/* Try to shorten the socket's path name by using chdir. */
-		if (slash)
-		{
-			int dirfd = open(".", O_RDONLY);
-
-			if (dirfd >= 0)
-			{
-				*slash = '\0';
-				if (chdir(sockname) >= 0)
-				{
-					s = connect_socket(slash + 1);
-					fchdir(dirfd);
-				}
-				*slash = '/';
-				close(dirfd);
-			}
-		}
-	}
-	if (s < 0)
-	{
-		printf("%s: %s: %s\n", progname, sockname, strerror(errno));
-		return 1;
-	}
-
-	/* Set some signals. */
-	signal(SIGPIPE, SIG_IGN);
-
-	/* Push the contents of standard input to the socket. */
-	pkt.type = MSG_PUSH;
-	for (;;)
-	{
-		ssize_t len;
-
-		memset(pkt.u.buf, 0, sizeof(pkt.u.buf));
-		len = read(0, pkt.u.buf, sizeof(pkt.u.buf));
-
-		if (len == 0)
-			return 0;
-		else if (len < 0)
-		{
-			printf("%s: %s: %s\n", progname, sockname,
-			       strerror(errno));
-			return 1;
-		}
-
-		pkt.len = len;
-		if (write(s, &pkt, sizeof(struct packet)) < 0)
-		{
-			printf("%s: %s: %s\n", progname, sockname,
-			       strerror(errno));
-			return 1;
-		}
-	}
 }

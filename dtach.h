@@ -81,16 +81,13 @@
 #define S_ISSOCK(m) (((m) & S_IFMT) == S_IFSOCK)
 #endif
 
-extern char *progname, *sockname;
-extern int detach_char, no_suspend, redraw_method;
+extern char *progname;
+extern int redraw_method;
 extern struct termios orig_term;
-extern int dont_have_tty;
 
 enum
 {
 	MSG_PUSH	= 0,
-	MSG_ATTACH	= 1,
-	MSG_DETACH	= 2,
 	MSG_WINCH	= 3,
 	MSG_REDRAW	= 4,
 };
@@ -127,11 +124,7 @@ struct packet
 /* This hopefully moves to the bottom of the screen */
 #define EOS "\033[999H"
 
-int attach_main(int noerror);
-int master_main(char **argv, int waitattach, int dontfork);
-int push_main(void);
+int attach_main(int s);
+int master_main(char **argv, int s);
 
-#ifdef sun
-#define BROKEN_MASTER
-#endif
 #endif
