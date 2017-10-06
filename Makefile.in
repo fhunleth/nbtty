@@ -9,10 +9,10 @@ VPATH = $(srcdir)
 OBJ = attach.o master.o main.o
 SRC = $(srcdir)/attach.c $(srcdir)/master.c $(srcdir)/main.c
 
-TARFILES = $(srcdir)/README $(srcdir)/COPYING $(srcdir)/Makefile.in \
+TARFILES = $(srcdir)/README.md $(srcdir)/COPYING $(srcdir)/Makefile.in \
 	   $(srcdir)/config.h.in $(SRC) \
 	   $(srcdir)/dtach.h $(srcdir)/dtach.spec $(srcdir)/configure \
-	   $(srcdir)/configure.ac $(srcdir)/dtach.1
+	   $(srcdir)/configure.ac
 
 nbtty: $(OBJ)
 	$(CC) -o $@ $(LDFLAGS) $(OBJ) $(LIBS)
