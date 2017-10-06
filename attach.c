@@ -144,7 +144,7 @@ attach_main(int s)
 
 			if (len == 0)
 			{
-				printf(EOS "\r\n[EOF - dtach terminating]"
+                printf(EOS "\r\n[EOF - nbtty terminating]"
 					"\r\n");
 				exit(0);
 			}

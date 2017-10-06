@@ -18,6 +18,8 @@
 */
 #include "dtach.h"
 
+//#define REPORT_BYTES_DROPPED
+
 /* The pty struct - The pty information is stored here. */
 struct pty
 {
@@ -32,12 +34,14 @@ struct pty
 	struct winsize ws;
 };
 
-/* The list of connected clients. */
+/* The connected client. */
 static int client_fd = -1;
 /* The pseudo-terminal created for the child process. */
 static struct pty the_pty;
 
+#ifdef REPORT_BYTES_DROPPED
 int bytes_dropped = 0;
+#endif
 
 #ifndef HAVE_FORKPTY
 pid_t forkpty(int *amaster, char *name, struct termios *termp,
@@ -158,6 +162,7 @@ pty_activity()
     ssize_t written = 0;
     while (written < len)
     {
+#ifdef REPORT_BYTES_DROPPED
         {
             static int last_bytes_dropped = 0;
             if (last_bytes_dropped != bytes_dropped) {
@@ -167,6 +172,7 @@ pty_activity()
                     last_bytes_dropped = bytes_dropped;
             }
         }
+#endif
         ssize_t n = write(client_fd, buf + written, len - written);
 
         if (n > 0)
@@ -177,7 +183,9 @@ pty_activity()
             break;
     }
 
+#ifdef REPORT_BYTES_DROPPED
     bytes_dropped += (len - written);
+#endif
 }
 
 /* Process activity from a client. */
