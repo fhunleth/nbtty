@@ -20,6 +20,20 @@
 
 //#define REPORT_BYTES_DROPPED
 
+#define ESC "\033"
+
+/*
+ * This escape sequence does the following:
+ * 1. Saves the cursor position
+ * 2. Put the cursor at 999,999
+ * 3. Get where the cursor ended up
+ * 4. Put the cursor back
+ *
+ * The remote terminal should send back:
+ * ESC"[%u;%uR" with the number of rows and columns.
+ */
+static const char window_size_sequence[] = ESC"7" ESC"[r" ESC"[999;999H" ESC"[6n" ESC"8";
+
 /* The pty struct - The pty information is stored here. */
 struct pty
 {
@@ -47,6 +61,134 @@ int bytes_dropped = 0;
 pid_t forkpty(int *amaster, char *name, struct termios *termp,
 	struct winsize *winp);
 #endif
+
+struct ansi_parser
+{
+    unsigned char buffer[64];
+    int index;
+    int state;
+
+    int row;
+    int col;
+};
+static struct ansi_parser ansi_parser;
+
+struct ansi_parse_transition
+{
+    const char *chars;
+    int next_state;
+    void (*handler)(struct ansi_parser *parser, unsigned char in, unsigned char **out);
+};
+
+struct ansi_parse_state
+{
+    struct ansi_parse_transition transitions[3];
+};
+
+void ansi_handle_start(struct ansi_parser *parser, unsigned char in, unsigned char **out)
+{
+    parser->row = 0;
+    parser->col = 0;
+    parser->buffer[0] = in;
+    parser->index = 1;
+
+    (void) out;
+}
+
+void ansi_handle_capture(struct ansi_parser *parser, unsigned char in, unsigned char **out)
+{
+    parser->buffer[parser->index++] = in;
+    (void) out;
+}
+
+void ansi_handle_row(struct ansi_parser *parser, unsigned char in, unsigned char **out)
+{
+    parser->row = parser->row * 10 + parser->buffer[parser->index] - '0';
+    ansi_handle_capture(parser, in, out);
+}
+
+void ansi_handle_col(struct ansi_parser *parser, unsigned char in, unsigned char **out)
+{
+    parser->col = parser->col * 10 + parser->buffer[parser->index] - '0';
+    ansi_handle_capture(parser, in, out);
+}
+
+void ansi_handle_rc(struct ansi_parser *parser, unsigned char in, unsigned char **out)
+{
+    // set to row, col
+    //*out += sprintf((char *) *out, "[%d,%d]", parser->row, parser->col);
+
+    struct winsize ws;
+    ws.ws_row = parser->row;
+    ws.ws_col = parser->col;
+    ws.ws_xpixel = 0;
+    ws.ws_ypixel = 0;
+    ioctl(the_pty.fd, TIOCSWINSZ, &ws);
+
+    // Discard ANSI code
+    parser->index = 0;
+
+    (void) in;
+    (void) out;
+}
+
+void ansi_handle_mismatch(struct ansi_parser *parser, unsigned char in, unsigned char **out)
+{
+    if (parser->index > 0) {
+        memcpy(*out, parser->buffer, parser->index);
+        *out += parser->index;
+        parser->index = 0;
+    }
+    **out = in;
+    *out += 1;
+}
+
+/*
+ * This is a little DFA for parsing the one ANSI response that
+ * we're interested in. It is also discarded so that it doesn't
+ * mess up Erlang's ANSI parser which doesn't seem to handle it.
+ *
+ * Note that this DFA buffers characters due to the requirement
+ * to toss the ANSI response of interest. Since buffering input
+ * could really confuse a user, it passes it on as soon as there
+ * is no chance of a match.
+ */
+#define CATCH_ALL {NULL, 0, ansi_handle_mismatch}
+static struct ansi_parse_state ansi_states[] = {
+ /* 0 - Start */ {{{ESC, 1, ansi_handle_start}, CATCH_ALL}},
+ /* 1 - Esc   */ {{{"[", 2, ansi_handle_capture}, CATCH_ALL}},
+ /* 2 - [     */ {{{"0123456789", 3, ansi_handle_row}, CATCH_ALL}},
+ /* 3 - n1    */ {{{"0123456789", 4, ansi_handle_row}, {";", 6, ansi_handle_capture}, CATCH_ALL}},
+ /* 4 - n2    */ {{{"0123456789", 5, ansi_handle_row}, {";", 6, ansi_handle_capture}, CATCH_ALL}},
+ /* 5 - n3    */ {{{";", 6, ansi_handle_capture}, CATCH_ALL}},
+ /* 6 - ;     */ {{{"0123456789", 7, ansi_handle_col}, CATCH_ALL}},
+ /* 7 - m1    */ {{{"0123456789", 8, ansi_handle_col}, {"R", 0, ansi_handle_rc}, CATCH_ALL}},
+ /* 8 - m2    */ {{{"0123456789", 9, ansi_handle_col}, {"R", 0, ansi_handle_rc}, CATCH_ALL}},
+ /* 9 - m3    */ {{{"R", 0, ansi_handle_rc}, CATCH_ALL}},
+};
+
+void ansi_process_input(const unsigned char *input, size_t input_size,
+                   unsigned char *output, size_t *output_size)
+{
+    unsigned char *out = output;
+    for (size_t i = 0; i < input_size; i++) {
+        struct ansi_parse_transition *transition = ansi_states[ansi_parser.state].transitions;
+        unsigned char in = input[i];
+        ansi_parser.buffer[ansi_parser.index] = input[i];
+        for (;;) {
+            if (transition->chars == NULL || strchr(transition->chars, input[i])) {
+                // match
+                transition->handler(&ansi_parser, in, &out);
+                ansi_parser.state = transition->next_state;
+                break;
+            } else {
+                // no match -> try the next one.
+                transition++;
+            }
+        }
+    }
+    *output_size = out - output;
+}
 
 /* Signal */
 static RETSIGTYPE 
@@ -174,7 +316,13 @@ pty_activity()
         }
 #endif
         ssize_t n = write(client_fd, buf + written, len - written);
+        if (n == len && memchr(buf, '\n', len)) {
+            // New line, so check window size.
+            ssize_t n2 = write(client_fd, window_size_sequence, sizeof(window_size_sequence));
+            if (n2 == sizeof(window_size_sequence)) {
 
+            }
+        }
         if (n > 0)
             written += n;
         else if (n < 0 && errno == EINTR)
@@ -211,8 +359,13 @@ client_activity()
 	/* Push out data to the program. */
 	if (pkt.type == MSG_PUSH)
 	{
-		if (pkt.len <= sizeof(pkt.u.buf))
-			write(the_pty.fd, pkt.u.buf, pkt.len);
+        if (pkt.len <= sizeof(pkt.u.buf)) {
+            unsigned char output[64];
+            size_t output_size;
+            ansi_process_input(pkt.u.buf, pkt.len, output, &output_size);
+            if (output_size > 0)
+                write(the_pty.fd, output, output_size);
+        }
 	}
 
 	/* Window size change request, without a forced redraw. */
@@ -335,6 +488,8 @@ master_main(char **argv, int s)
 {
 	int fd[2] = {-1, -1};
 	pid_t pid;
+
+    memset(&ansi_parser, 0, sizeof(ansi_parser));
 
 	/* Use a default redraw method if one hasn't been specified yet. */
 	if (redraw_method == REDRAW_UNSPEC)
