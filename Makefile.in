@@ -6,12 +6,12 @@ LIBS = @LIBS@
 VERSION = @PACKAGE_VERSION@
 VPATH = $(srcdir)
 
-OBJ = attach.o master.o main.o
-SRC = $(srcdir)/attach.c $(srcdir)/master.c $(srcdir)/main.c
+OBJ = attach.o master.o main.o ansi.o
+SRC = $(srcdir)/attach.c $(srcdir)/master.c $(srcdir)/main.c $(srcdir)/ansi.c
 
 TARFILES = $(srcdir)/README.md $(srcdir)/COPYING $(srcdir)/Makefile.in \
 	   $(srcdir)/config.h.in $(SRC) \
-	   $(srcdir)/dtach.h $(srcdir)/dtach.spec $(srcdir)/configure \
+	   $(srcdir)/dtach.h $(srcdir)/ansi.h $(srcdir)/configure \
 	   $(srcdir)/configure.ac
 
 nbtty: $(OBJ)
@@ -31,6 +31,6 @@ tar:
 	rm -rf nbtty-$(VERSION)
 
 attach.o: @srcdir@/attach.c @srcdir@/dtach.h config.h
-master.o: @srcdir@/master.c @srcdir@/dtach.h config.h
+master.o: @srcdir@/master.c @srcdir@/dtach.h @srcdir@/ansi.h config.h
 main.o: @srcdir@/main.c @srcdir@/dtach.h config.h
 

@@ -118,30 +118,6 @@ init_pty(char **argv, int statusfd)
 	return 0;
 }
 
-/* Send a signal to the slave side of a pseudo-terminal. */
-static void
-killpty(struct pty *pty, int sig)
-{
-	pid_t pgrp = -1;
-
-#ifdef TIOCSIGNAL
-	if (ioctl(pty->fd, TIOCSIGNAL, sig) >= 0)
-		return;
-#endif
-#ifdef TIOCSIG
-	if (ioctl(pty->fd, TIOCSIG, sig) >= 0)
-		return;
-#endif
-#ifdef TIOCGPGRP
-	if (ioctl(pty->fd, TIOCGPGRP, &pgrp) >= 0 && pgrp != -1 &&
-		kill(-pgrp, sig) >= 0)
-		return;
-#endif
-
-	/* Fallback using the child's pid. */
-	kill(-pty->pid, sig);
-}
-
 /* Process activity on the pty - Input and terminal changes are sent out to
 ** the attached clients. If the pty goes away, we die. */
 static void
@@ -178,9 +154,10 @@ pty_activity()
 #endif
         ssize_t n = write(client_fd, buf + written, len - written);
         if (n > 0) {
-            if (n == len && memchr(buf, '\n', len)) {
+            if (n == len && len < 80 && buf[len - 1] == '\n') {
                 // Everything wrote in one go and there was a
                 // new line, so check window size.
+                // TODO: Figure out a better heuristic. Perhaps check for the width no more than x times per minute, etc.
                 ansi_size_request(client_fd);
             }
 
@@ -227,55 +204,13 @@ client_activity()
 	if (pkt.type == MSG_PUSH)
 	{
         if (pkt.len <= sizeof(pkt.u.buf)) {
-            unsigned char output[64];
+            unsigned char output[sizeof(pkt.u.buf) + ANSI_MAX_RESPONSE_LEN];
             size_t output_size;
             if (ansi_process_input(pkt.u.buf, pkt.len, output, &output_size, &the_pty.ws))
                 ioctl(the_pty.fd, TIOCSWINSZ, &the_pty.ws);
             if (output_size > 0)
                 write(the_pty.fd, output, output_size);
         }
-	}
-
-	/* Window size change request, without a forced redraw. */
-	else if (pkt.type == MSG_WINCH)
-	{
-		the_pty.ws = pkt.u.ws;
-		ioctl(the_pty.fd, TIOCSWINSZ, &the_pty.ws);
-	}
-
-	/* Force a redraw using a particular method. */
-	else if (pkt.type == MSG_REDRAW)
-	{
-		int method = pkt.len;
-
-		/* If the client didn't specify a particular method, use
-		** whatever we had on startup. */
-		if (method == REDRAW_UNSPEC)
-			method = redraw_method;
-		if (method == REDRAW_NONE)
-			return;
-
-		/* Set the window size. */
-		the_pty.ws = pkt.u.ws;
-		ioctl(the_pty.fd, TIOCSWINSZ, &the_pty.ws);
-
-		/* Send a ^L character if the terminal is in no-echo and
-		** character-at-a-time mode. */
-		if (method == REDRAW_CTRL_L)
-		{
-			char c = '\f';
-
-                	if (((the_pty.term.c_lflag & (ECHO|ICANON)) == 0) &&
-                        	(the_pty.term.c_cc[VMIN] == 1))
-			{
-				write(the_pty.fd, &c, 1);
-			}
-		}
-		/* Send a WINCH signal to the program. */
-		else if (method == REDRAW_WINCH)
-		{
-			killpty(&the_pty, SIGWINCH);
-		}
 	}
 }
 
@@ -358,10 +293,6 @@ master_main(char **argv, int s)
 	pid_t pid;
 
     ansi_reset_parser();
-
-	/* Use a default redraw method if one hasn't been specified yet. */
-	if (redraw_method == REDRAW_UNSPEC)
-		redraw_method = REDRAW_CTRL_L;
 
 #if defined(F_SETFD) && defined(FD_CLOEXEC)
 	fcntl(s, F_SETFD, FD_CLOEXEC);

@@ -31,8 +31,6 @@
 ** restore this.
 */
 static struct termios cur_term;
-/* 1 if the window size changed */
-static int win_changed;
 
 /* Restores the original terminal settings. */
 static void
@@ -57,22 +55,10 @@ die(int sig)
 	exit(1);
 }
 
-/* Window size change. */
-static RETSIGTYPE
-win_change()
-{
-	signal(SIGWINCH, win_change);
-	win_changed = 1;
-}
-
 /* Handles input from the keyboard. */
 static void
 process_kbd(int s, struct packet *pkt)
 {
-	/* Just in case something pukes out. */
-    if (pkt->u.buf[0] == '\f')
-		win_changed = 1;
-
 	/* Push it out */
 	write(s, pkt, sizeof(struct packet));
 }
@@ -98,7 +84,6 @@ attach_main(int s)
 	signal(SIGTERM, die);
 	signal(SIGINT, die);
 	signal(SIGQUIT, die);
-	signal(SIGWINCH, win_change);
 
 	/* Set raw mode. */
 	cur_term.c_iflag &= ~(IGNBRK|BRKINT|PARMRK|ISTRIP|INLCR|IGNCR|ICRNL);
@@ -114,13 +99,6 @@ attach_main(int s)
 
 	/* Clear the screen. This assumes VT100. */
 	write(1, "\33[H\33[J", 6);
-
-    /* We would like a redraw. */
-    memset(&pkt, 0, sizeof(struct packet));
-    pkt.type = MSG_REDRAW;
-	pkt.len = redraw_method;
-	ioctl(0, TIOCGWINSZ, &pkt.u.ws);
-	write(s, &pkt, sizeof(struct packet));
 
 	/* Wait for things to happen */
 	while (1)
@@ -172,16 +150,6 @@ attach_main(int s)
 			pkt.len = len;
 			process_kbd(s, &pkt);
 			n--;
-		}
-
-		/* Window size changed? */
-		if (win_changed)
-		{
-			win_changed = 0;
-
-			pkt.type = MSG_WINCH;
-			ioctl(0, TIOCGWINSZ, &pkt.u.ws);
-			write(s, &pkt, sizeof(pkt));
 		}
 	}
 	return 0;

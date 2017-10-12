@@ -41,17 +41,17 @@ struct ansi_parse_state
 
 static void ansi_handle_start(unsigned char in, unsigned char **out)
 {
+    (void) out;
     ansi_parser.row = 0;
     ansi_parser.col = 0;
     ansi_parser.buffer[0] = in;
     ansi_parser.index = 1;
-    (void) out;
 }
 
 static void ansi_handle_capture(unsigned char in, unsigned char **out)
 {
-    ansi_parser.buffer[ansi_parser.index++] = in;
     (void) out;
+    ansi_parser.buffer[ansi_parser.index++] = in;
 }
 
 static void ansi_handle_row(unsigned char in, unsigned char **out)
@@ -68,8 +68,10 @@ static void ansi_handle_col(unsigned char in, unsigned char **out)
 
 static void ansi_handle_rc(unsigned char in, unsigned char **out)
 {
+    (void) in;
+    (void) out;
+
     // set to row, col
-    //*out += sprintf((char *) *out, "[%d,%d]", ansi_parser.row, ansi_parser.col);
     ansi_parser.ws.ws_row = ansi_parser.row;
     ansi_parser.ws.ws_col = ansi_parser.col;
     ansi_parser.ws.ws_xpixel = 0;
@@ -77,9 +79,6 @@ static void ansi_handle_rc(unsigned char in, unsigned char **out)
 
     // Discard ANSI code
     ansi_parser.index = 0;
-
-    (void) in;
-    (void) out;
 }
 
 static void ansi_handle_mismatch(unsigned char in, unsigned char **out)
@@ -171,5 +170,5 @@ void ansi_reset_parser()
  */
 int ansi_size_request(int fd)
 {
-    return write(fd, window_size_sequence, sizeof(window_size_sequence));
+    return write(fd, window_size_sequence, sizeof(window_size_sequence) - 1);
 }

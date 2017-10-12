@@ -29,8 +29,6 @@ const char copyright[] = "dtach - version " PACKAGE_VERSION "(C)Copyright 2004-2
 
 /* argv[0] from the program */
 char *progname;
-/* The default redraw method. Initially set to unspecified. */
-int redraw_method = REDRAW_UNSPEC;
 
 /*
 ** The original terminal settings. Shared between the master and attach
