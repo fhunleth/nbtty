@@ -43,11 +43,6 @@ static struct pty the_pty;
 int bytes_dropped = 0;
 #endif
 
-#ifndef HAVE_FORKPTY
-pid_t forkpty(int *amaster, char *name, struct termios *termp,
-              struct winsize *winp);
-#endif
-
 /* Signal */
 static RETSIGTYPE die(int sig)
 {
@@ -61,22 +56,10 @@ static RETSIGTYPE die(int sig)
 /* Sets a file descriptor to non-blocking mode. */
 static int setnonblocking(int fd)
 {
-    int flags;
-
-#if defined(O_NONBLOCK)
-    flags = fcntl(fd, F_GETFL);
+    int flags = fcntl(fd, F_GETFL);
     if (flags < 0 || fcntl(fd, F_SETFL, flags | O_NONBLOCK) < 0)
         return -1;
     return 0;
-#elif defined(FIONBIO)
-    flags = 1;
-    if (ioctl(fd, FIONBIO, &flags) < 0)
-        return -1;
-    return 0;
-#else
-#warning Do not know how to set non-blocking mode.
-    return 0;
-#endif
 }
 
 /* Initialize the pty structure. */
@@ -270,7 +253,6 @@ int master_main(char **argv, int s)
 
     ansi_reset_parser();
 
-#if defined(F_SETFD) && defined(FD_CLOEXEC)
     fcntl(s, F_SETFD, FD_CLOEXEC);
 
     if (pipe(fd) >= 0) {
@@ -281,7 +263,7 @@ int master_main(char **argv, int s)
             fd[0] = fd[1] = -1;
         }
     }
-#endif
+
     setnonblocking(s);
     client_fd = s;
 
@@ -298,7 +280,6 @@ int master_main(char **argv, int s)
     }
     /* Parent - just return. */
 
-#if defined(F_SETFD) && defined(FD_CLOEXEC)
     /* Check if an error occurred while trying to execute the program. */
     if (fd[0] != -1) {
         char buf[1024];
@@ -313,7 +294,7 @@ int master_main(char **argv, int s)
         }
         close(fd[0]);
     }
-#endif
+
     close(s);
     return 0;
 }
