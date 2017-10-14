@@ -36,103 +36,96 @@ static struct termios cur_term;
 static void
 restore_term(void)
 {
-	tcsetattr(0, TCSADRAIN, &orig_term);
+    tcsetattr(0, TCSADRAIN, &orig_term);
 
-	/* Make cursor visible. Assumes VT100. */
-	printf("\033[?25h");
-	fflush(stdout);
+    /* Make cursor visible. Assumes VT100. */
+    printf("\033[?25h");
+    fflush(stdout);
 }
 
 /* Signal */
 static RETSIGTYPE
 die(int sig)
 {
-	/* Print a nice pretty message for some things. */
-	if (sig == SIGHUP || sig == SIGINT)
-		printf(EOS "\r\n[detached]\r\n");
-	else
-		printf(EOS "\r\n[got signal %d - dying]\r\n", sig);
+    /* Print a nice pretty message for some things. */
+    if (sig == SIGHUP || sig == SIGINT)
+        printf(EOS "\r\n[detached]\r\n");
+    else
+        printf(EOS "\r\n[got signal %d - dying]\r\n", sig);
     exit(EXIT_FAILURE);
 }
 
 int attach_main(int s)
 {
-	unsigned char buf[BUFSIZE];
+    unsigned char buf[BUFSIZE];
 
-	/* The current terminal settings are equal to the original terminal
-	** settings at this point. */
-	cur_term = orig_term;
+    /* The current terminal settings are equal to the original terminal
+    ** settings at this point. */
+    cur_term = orig_term;
 
-	/* Set a trap to restore the terminal when we die. */
-	atexit(restore_term);
+    /* Set a trap to restore the terminal when we die. */
+    atexit(restore_term);
 
-	/* Set some signals. */
-	signal(SIGPIPE, SIG_IGN);
-	signal(SIGXFSZ, SIG_IGN);
-	signal(SIGHUP, die);
-	signal(SIGTERM, die);
-	signal(SIGINT, die);
-	signal(SIGQUIT, die);
+    /* Set some signals. */
+    signal(SIGPIPE, SIG_IGN);
+    signal(SIGXFSZ, SIG_IGN);
+    signal(SIGHUP, die);
+    signal(SIGTERM, die);
+    signal(SIGINT, die);
+    signal(SIGQUIT, die);
 
-	/* Set raw mode. */
-	cur_term.c_iflag &= ~(IGNBRK|BRKINT|PARMRK|ISTRIP|INLCR|IGNCR|ICRNL);
-	cur_term.c_iflag &= ~(IXON|IXOFF);
-	cur_term.c_oflag &= ~(OPOST);
-	cur_term.c_lflag &= ~(ECHO|ECHONL|ICANON|ISIG|IEXTEN);
-	cur_term.c_cflag &= ~(CSIZE|PARENB);
-	cur_term.c_cflag |= CS8;
-	cur_term.c_cc[VLNEXT] = VDISABLE;
-	cur_term.c_cc[VMIN] = 1;
-	cur_term.c_cc[VTIME] = 0;
-	tcsetattr(0, TCSADRAIN, &cur_term);
+    /* Set raw mode. */
+    cur_term.c_iflag &= ~(IGNBRK | BRKINT | PARMRK | ISTRIP | INLCR | IGNCR | ICRNL);
+    cur_term.c_iflag &= ~(IXON | IXOFF);
+    cur_term.c_oflag &= ~(OPOST);
+    cur_term.c_lflag &= ~(ECHO | ECHONL | ICANON | ISIG | IEXTEN);
+    cur_term.c_cflag &= ~(CSIZE | PARENB);
+    cur_term.c_cflag |= CS8;
+    cur_term.c_cc[VLNEXT] = VDISABLE;
+    cur_term.c_cc[VMIN] = 1;
+    cur_term.c_cc[VTIME] = 0;
+    tcsetattr(0, TCSADRAIN, &cur_term);
 
-	/* Clear the screen. This assumes VT100. */
+    /* Clear the screen. This assumes VT100. */
     write(STDIN_FILENO, "\33[H\33[J", 6);
 
-	/* Wait for things to happen */
-    for (;;)
-	{
+    /* Wait for things to happen */
+    for (;;) {
         fd_set readfds;
         FD_ZERO(&readfds);
         FD_SET(STDIN_FILENO, &readfds);
-		FD_SET(s, &readfds);
+        FD_SET(s, &readfds);
         int n = select(s + 1, &readfds, NULL, NULL, NULL);
-		if (n < 0 && errno != EINTR && errno != EAGAIN)
-		{
-			printf(EOS "\r\n[select failed]\r\n");
+        if (n < 0 && errno != EINTR && errno != EAGAIN) {
+            printf(EOS "\r\n[select failed]\r\n");
             exit(EXIT_FAILURE);
-		}
+        }
 
-		/* Pty activity */
-		if (n > 0 && FD_ISSET(s, &readfds))
-		{
-			ssize_t len = read(s, buf, sizeof(buf));
+        /* Pty activity */
+        if (n > 0 && FD_ISSET(s, &readfds)) {
+            ssize_t len = read(s, buf, sizeof(buf));
 
-			if (len == 0)
-			{
+            if (len == 0) {
                 printf(EOS "\r\n[EOF - nbtty terminating]"
-					"\r\n");
+                       "\r\n");
                 exit(EXIT_SUCCESS);
-			}
-			else if (len < 0)
-			{
-				printf(EOS "\r\n[read returned an error]\r\n");
+            } else if (len < 0) {
+                printf(EOS "\r\n[read returned an error]\r\n");
                 exit(EXIT_FAILURE);
-			}
-			/* Send the data to the terminal. */
+            }
+            /* Send the data to the terminal. */
             write(STDOUT_FILENO, buf, len);
-			n--;
-		}
-		/* stdin activity */
-        if (n > 0 && FD_ISSET(STDIN_FILENO, &readfds))
-		{
+            n--;
+        }
+        /* stdin activity */
+        if (n > 0 && FD_ISSET(STDIN_FILENO, &readfds)) {
             ssize_t len = read(STDIN_FILENO, buf, sizeof(buf));
-			if (len <= 0)
+            if (len <= 0)
                 exit(EXIT_FAILURE);
 
             write(s, buf, len);
-			n--;
-		}
-	}
-	return 0;
+            n--;
+        }
+    }
+    return 0;
 }

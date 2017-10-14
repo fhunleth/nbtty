@@ -14,8 +14,7 @@
 #define ESC "\033"
 static const char window_size_sequence[] = ESC"7" ESC"[r" ESC"[999;999H" ESC"[6n" ESC"8";
 
-struct ansi_parser
-{
+struct ansi_parser {
     unsigned char buffer[64];
     int index;
     int state;
@@ -27,15 +26,13 @@ struct ansi_parser
 };
 static struct ansi_parser ansi_parser;
 
-struct ansi_parse_transition
-{
+struct ansi_parse_transition {
     const char *chars;
     int next_state;
     void (*handler)(unsigned char in, unsigned char **out);
 };
 
-struct ansi_parse_state
-{
+struct ansi_parse_state {
     struct ansi_parse_transition transitions[3];
 };
 
@@ -104,16 +101,16 @@ static void ansi_handle_mismatch(unsigned char in, unsigned char **out)
  */
 #define CATCH_ALL {NULL, 0, ansi_handle_mismatch}
 static struct ansi_parse_state ansi_states[] = {
- /* 0 - Start */ {{{ESC, 1, ansi_handle_start}, CATCH_ALL}},
- /* 1 - Esc   */ {{{"[", 2, ansi_handle_capture}, CATCH_ALL}},
- /* 2 - [     */ {{{"0123456789", 3, ansi_handle_row}, CATCH_ALL}},
- /* 3 - n1    */ {{{"0123456789", 4, ansi_handle_row}, {";", 6, ansi_handle_capture}, CATCH_ALL}},
- /* 4 - n2    */ {{{"0123456789", 5, ansi_handle_row}, {";", 6, ansi_handle_capture}, CATCH_ALL}},
- /* 5 - n3    */ {{{";", 6, ansi_handle_capture}, CATCH_ALL}},
- /* 6 - ;     */ {{{"0123456789", 7, ansi_handle_col}, CATCH_ALL}},
- /* 7 - m1    */ {{{"0123456789", 8, ansi_handle_col}, {"R", 0, ansi_handle_rc}, CATCH_ALL}},
- /* 8 - m2    */ {{{"0123456789", 9, ansi_handle_col}, {"R", 0, ansi_handle_rc}, CATCH_ALL}},
- /* 9 - m3    */ {{{"R", 0, ansi_handle_rc}, CATCH_ALL}},
+    /* 0 - Start */ {{{ESC, 1, ansi_handle_start}, CATCH_ALL}},
+    /* 1 - Esc   */ {{{"[", 2, ansi_handle_capture}, CATCH_ALL}},
+    /* 2 - [     */ {{{"0123456789", 3, ansi_handle_row}, CATCH_ALL}},
+    /* 3 - n1    */ {{{"0123456789", 4, ansi_handle_row}, {";", 6, ansi_handle_capture}, CATCH_ALL}},
+    /* 4 - n2    */ {{{"0123456789", 5, ansi_handle_row}, {";", 6, ansi_handle_capture}, CATCH_ALL}},
+    /* 5 - n3    */ {{{";", 6, ansi_handle_capture}, CATCH_ALL}},
+    /* 6 - ;     */ {{{"0123456789", 7, ansi_handle_col}, CATCH_ALL}},
+    /* 7 - m1    */ {{{"0123456789", 8, ansi_handle_col}, {"R", 0, ansi_handle_rc}, CATCH_ALL}},
+    /* 8 - m2    */ {{{"0123456789", 9, ansi_handle_col}, {"R", 0, ansi_handle_rc}, CATCH_ALL}},
+    /* 9 - m3    */ {{{"R", 0, ansi_handle_rc}, CATCH_ALL}},
 };
 
 /**
@@ -148,8 +145,8 @@ int ansi_process_input(const unsigned char *input, size_t input_size,
     *output_size = out - output;
 
     if (ansi_parser.ws.ws_col != 0 &&
-        ansi_parser.ws.ws_col != ws->ws_col &&
-        ansi_parser.ws.ws_row != ws->ws_row) {
+            ansi_parser.ws.ws_col != ws->ws_col &&
+            ansi_parser.ws.ws_row != ws->ws_row) {
         *ws = ansi_parser.ws;
         return 1;
     } else {

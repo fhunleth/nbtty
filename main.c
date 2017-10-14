@@ -40,23 +40,22 @@ struct termios orig_term;
 int
 main(int argc, char **argv)
 {
-	/* Save the program name */
-	progname = argv[0];
-	++argv; --argc;
+    /* Save the program name */
+    progname = argv[0];
+    ++argv;
+    --argc;
 
-    if (argc < 1)
-	{
-		printf("%s: No command was specified.\n", progname);
-		printf("Try '%s --help' for more information.\n",
-			progname);
-		return 1;
-	}
+    if (argc < 1) {
+        printf("%s: No command was specified.\n", progname);
+        printf("Try '%s --help' for more information.\n",
+               progname);
+        return 1;
+    }
 
-	/* Save the original terminal settings. */
-	if (tcgetattr(0, &orig_term) < 0)
-	{
+    /* Save the original terminal settings. */
+    if (tcgetattr(0, &orig_term) < 0) {
         printf("%s: Attaching to a session requires a terminal.\n",
-            progname);
+               progname);
         return 1;
     }
 
