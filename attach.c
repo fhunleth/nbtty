@@ -104,8 +104,7 @@ int attach_main(int s)
             ssize_t len = read(s, buf, sizeof(buf));
 
             if (len == 0) {
-                printf(EOS "\r\n[EOF - nbtty terminating]"
-                       "\r\n");
+                printf(EOS "\r\n[EOF - nbtty terminating]\r\n");
                 exit(EXIT_SUCCESS);
             } else if (len < 0) {
                 printf(EOS "\r\n[read returned an error]\r\n");

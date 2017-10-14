@@ -28,31 +28,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-#if TIME_WITH_SYS_TIME
-#include <sys/time.h>
-#include <time.h>
-#else
-#if HAVE_SYS_TIME_H
-#include <sys/time.h>
-#else
-#include <time.h>
-#endif
-#endif
-
 #ifdef HAVE_PTY_H
 #include <pty.h>
-#endif
-
-#ifdef HAVE_UTIL_H
-#include <util.h>
-#endif
-
-#ifdef HAVE_LIBUTIL_H
-#include <libutil.h>
-#endif
-
-#ifdef HAVE_STROPTS_H
-#include <stropts.h>
 #endif
 
 #ifdef HAVE_UNISTD_H
@@ -63,24 +40,10 @@
 #include <sys/ioctl.h>
 #endif
 
-#ifdef HAVE_SYS_RESOURCE_H
-#include <sys/resource.h>
-#endif
-
 #include <termios.h>
 #include <sys/select.h>
-#include <sys/stat.h>
 #include <sys/socket.h>
-#include <sys/un.h>
 #include <err.h>
-
-#ifndef S_ISREG
-#define S_ISREG(m) (((m) & S_IFMT) == S_IFREG)
-#endif
-
-#ifndef S_ISSOCK
-#define S_ISSOCK(m) (((m) & S_IFMT) == S_IFSOCK)
-#endif
 
 extern struct termios orig_term;
 

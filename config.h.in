@@ -12,32 +12,17 @@
 /* Define to 1 if you have the `forkpty' function. */
 #undef HAVE_FORKPTY
 
-/* Define to 1 if you have the `grantpt' function. */
-#undef HAVE_GRANTPT
-
 /* Define to 1 if you have the <inttypes.h> header file. */
 #undef HAVE_INTTYPES_H
 
-/* Define to 1 if you have the `socket' library (-lsocket). */
-#undef HAVE_LIBSOCKET
-
 /* Define to 1 if you have the `util' library (-lutil). */
 #undef HAVE_LIBUTIL
-
-/* Define to 1 if you have the <libutil.h> header file. */
-#undef HAVE_LIBUTIL_H
 
 /* Define to 1 if you have the <memory.h> header file. */
 #undef HAVE_MEMORY_H
 
 /* Define to 1 if you have the `memset' function. */
 #undef HAVE_MEMSET
-
-/* Define to 1 if you have the `openpty' function. */
-#undef HAVE_OPENPTY
-
-/* Define to 1 if you have the `ptsname' function. */
-#undef HAVE_PTSNAME
 
 /* Define to 1 if you have the <pty.h> header file. */
 #undef HAVE_PTY_H
@@ -63,14 +48,8 @@
 /* Define to 1 if you have the <string.h> header file. */
 #undef HAVE_STRING_H
 
-/* Define to 1 if you have the <stropts.h> header file. */
-#undef HAVE_STROPTS_H
-
 /* Define to 1 if you have the <sys/ioctl.h> header file. */
 #undef HAVE_SYS_IOCTL_H
-
-/* Define to 1 if you have the <sys/resource.h> header file. */
-#undef HAVE_SYS_RESOURCE_H
 
 /* Define to 1 if you have the <sys/select.h> header file. */
 #undef HAVE_SYS_SELECT_H
@@ -81,9 +60,6 @@
 /* Define to 1 if you have the <sys/stat.h> header file. */
 #undef HAVE_SYS_STAT_H
 
-/* Define to 1 if you have the <sys/time.h> header file. */
-#undef HAVE_SYS_TIME_H
-
 /* Define to 1 if you have the <sys/types.h> header file. */
 #undef HAVE_SYS_TYPES_H
 
@@ -92,12 +68,6 @@
 
 /* Define to 1 if you have the <unistd.h> header file. */
 #undef HAVE_UNISTD_H
-
-/* Define to 1 if you have the `unlockpt' function. */
-#undef HAVE_UNLOCKPT
-
-/* Define to 1 if you have the <util.h> header file. */
-#undef HAVE_UTIL_H
 
 /* Define to the address where bug reports for this package should be sent. */
 #undef PACKAGE_BUGREPORT
@@ -122,9 +92,6 @@
 
 /* Define to 1 if you have the ANSI C header files. */
 #undef STDC_HEADERS
-
-/* Define to 1 if you can safely include both <sys/time.h> and <time.h>. */
-#undef TIME_WITH_SYS_TIME
 
 /* Define to empty if `const' does not conform to ANSI C. */
 #undef const
