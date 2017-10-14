@@ -5,9 +5,18 @@ than blocking.  This is useful for commands that log output and for whatever
 reason output is redirected to a location that can't keep up.  Rather than
 slowing or stopping the program, it can just keep going none the wiser.
 
-This is a substantially trimmed down fork of
+This program also polls the terminal for its dimensions using ANSI escape
+sequences. This is needed to pass on the size over a serial console since
+SIGWINCH doesn't work.
+
+The whole point of this program to make the Elixir IEx console in Nerves
+projects work well. The blocking issue became especially problematic when the
+IEx console was redirected over a USB gadget serial port.
+
+This is a substantially trimmed down and modified fork of
 [dtach](https://github.com/crigler/dtach). A huge thanks goes out to Ned T.
-Crigler for this useful tool.
+Crigler for this useful tool. Ned - if you're reading this and don't recognize
+your code, sorry, I kind of butchered it.
 
 ## Usage
 
@@ -18,6 +27,6 @@ nbtty <command> [args...]
 ## License
 
 Since `nbtty` derives from `dtach`, much of it is Copyright © 2004-2016 Ned T.
-Crigler. Like `dtach`, `nbtty` is distributed under the General Public License.
+Crigler.  Like `dtach`, `nbtty` is distributed under the General Public License.
 See [COPYING](COPYING) for details.
 
