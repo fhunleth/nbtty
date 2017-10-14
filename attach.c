@@ -52,23 +52,12 @@ die(int sig)
 		printf(EOS "\r\n[detached]\r\n");
 	else
 		printf(EOS "\r\n[got signal %d - dying]\r\n", sig);
-	exit(1);
+    exit(EXIT_FAILURE);
 }
 
-/* Handles input from the keyboard. */
-static void
-process_kbd(int s, struct packet *pkt)
+int attach_main(int s)
 {
-	/* Push it out */
-	write(s, pkt, sizeof(struct packet));
-}
-
-int
-attach_main(int s)
-{
-	struct packet pkt;
 	unsigned char buf[BUFSIZE];
-	fd_set readfds;
 
 	/* The current terminal settings are equal to the original terminal
 	** settings at this point. */
@@ -98,21 +87,20 @@ attach_main(int s)
 	tcsetattr(0, TCSADRAIN, &cur_term);
 
 	/* Clear the screen. This assumes VT100. */
-	write(1, "\33[H\33[J", 6);
+    write(STDIN_FILENO, "\33[H\33[J", 6);
 
 	/* Wait for things to happen */
-	while (1)
+    for (;;)
 	{
-		int n;
-
-		FD_ZERO(&readfds);
-		FD_SET(0, &readfds);
+        fd_set readfds;
+        FD_ZERO(&readfds);
+        FD_SET(STDIN_FILENO, &readfds);
 		FD_SET(s, &readfds);
-		n = select(s + 1, &readfds, NULL, NULL, NULL);
+        int n = select(s + 1, &readfds, NULL, NULL, NULL);
 		if (n < 0 && errno != EINTR && errno != EAGAIN)
 		{
 			printf(EOS "\r\n[select failed]\r\n");
-			exit(1);
+            exit(EXIT_FAILURE);
 		}
 
 		/* Pty activity */
@@ -124,31 +112,25 @@ attach_main(int s)
 			{
                 printf(EOS "\r\n[EOF - nbtty terminating]"
 					"\r\n");
-				exit(0);
+                exit(EXIT_SUCCESS);
 			}
 			else if (len < 0)
 			{
 				printf(EOS "\r\n[read returned an error]\r\n");
-				exit(1);
+                exit(EXIT_FAILURE);
 			}
 			/* Send the data to the terminal. */
-			write(1, buf, len);
+            write(STDOUT_FILENO, buf, len);
 			n--;
 		}
 		/* stdin activity */
-		if (n > 0 && FD_ISSET(0, &readfds))
+        if (n > 0 && FD_ISSET(STDIN_FILENO, &readfds))
 		{
-			ssize_t len;
-
-			pkt.type = MSG_PUSH;
-			memset(pkt.u.buf, 0, sizeof(pkt.u.buf));
-			len = read(0, pkt.u.buf, sizeof(pkt.u.buf));
-
+            ssize_t len = read(STDIN_FILENO, buf, sizeof(buf));
 			if (len <= 0)
-				exit(1);
+                exit(EXIT_FAILURE);
 
-			pkt.len = len;
-			process_kbd(s, &pkt);
+            write(s, buf, len);
 			n--;
 		}
 	}

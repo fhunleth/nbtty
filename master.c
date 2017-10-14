@@ -49,22 +49,18 @@ pid_t forkpty(int *amaster, char *name, struct termios *termp,
 	struct winsize *winp);
 #endif
 
-
 /* Signal */
-static RETSIGTYPE 
-die(int sig)
+static RETSIGTYPE die(int sig)
 {
 	/* Well, the child died. */
 	if (sig == SIGCHLD)
-	{
 		return;
-	}
-	exit(1);
+
+    exit(EXIT_FAILURE);
 }
 
 /* Sets a file descriptor to non-blocking mode. */
-static int
-setnonblocking(int fd)
+static int setnonblocking(int fd)
 {
 	int flags;
 
@@ -85,8 +81,7 @@ setnonblocking(int fd)
 }
 
 /* Initialize the pty structure. */
-static int
-init_pty(char **argv, int statusfd)
+static int init_pty(char **argv, int statusfd)
 {
 	/* Use the original terminal's settings. We don't have to set the
 	** window size here, because the attacher will send it in a packet. */
@@ -120,8 +115,7 @@ init_pty(char **argv, int statusfd)
 
 /* Process activity on the pty - Input and terminal changes are sent out to
 ** the attached clients. If the pty goes away, we die. */
-static void
-pty_activity()
+static void pty_activity()
 {
 	unsigned char buf[BUFSIZE];
 	ssize_t len;
@@ -131,11 +125,11 @@ pty_activity()
 
 	/* Error -> die */
 	if (len <= 0)
-		exit(1);
+        exit(EXIT_FAILURE);
 
 	/* Get the current terminal settings. */
 	if (tcgetattr(the_pty.fd, &the_pty.term) < 0)
-		exit(1);
+        exit(EXIT_FAILURE);
 
     ssize_t written = 0;
     int retries = 0;
@@ -181,14 +175,12 @@ pty_activity()
 }
 
 /* Process activity from a client. */
-static void
-client_activity()
+static void client_activity()
 {
-	ssize_t len;
-	struct packet pkt;
+    unsigned char buf[BUFSIZE];
 
 	/* Read the activity. */
-    len = read(client_fd, &pkt, sizeof(struct packet));
+    ssize_t len = read(client_fd, buf, sizeof(buf));
 	if (len < 0 && (errno == EAGAIN || errno == EINTR))
 		return;
 
@@ -201,17 +193,12 @@ client_activity()
 	} 
 
 	/* Push out data to the program. */
-	if (pkt.type == MSG_PUSH)
-	{
-        if (pkt.len <= sizeof(pkt.u.buf)) {
-            unsigned char output[sizeof(pkt.u.buf) + ANSI_MAX_RESPONSE_LEN];
-            size_t output_size;
-            if (ansi_process_input(pkt.u.buf, pkt.len, output, &output_size, &the_pty.ws))
-                ioctl(the_pty.fd, TIOCSWINSZ, &the_pty.ws);
-            if (output_size > 0)
-                write(the_pty.fd, output, output_size);
-        }
-	}
+    unsigned char output[sizeof(buf) + ANSI_MAX_RESPONSE_LEN];
+    size_t output_size;
+    if (ansi_process_input(buf, len, output, &output_size, &the_pty.ws))
+        ioctl(the_pty.fd, TIOCSWINSZ, &the_pty.ws);
+    if (output_size > 0)
+        write(the_pty.fd, output, output_size);
 }
 
 /* The master process - It watches over the pty process and the attached */
@@ -234,7 +221,7 @@ master_process(char **argv, int statusfd)
 			printf("%s: Could not find a pty.\n", progname);
 		else
 			printf("%s: init_pty: %s\n", progname, strerror(errno));
-		exit(1);
+        exit(EXIT_FAILURE);
 	}
 
 	/* Set up some signals. */
@@ -339,7 +326,7 @@ master_main(char **argv, int s)
 		len = read(fd[0], buf, sizeof(buf));
 		if (len > 0)
 		{
-			write(2, buf, len);
+            write(STDERR_FILENO, buf, len);
 			kill(pid, SIGTERM);
 			return 1;
 		}

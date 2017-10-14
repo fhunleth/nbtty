@@ -84,23 +84,6 @@
 extern char *progname;
 extern struct termios orig_term;
 
-enum
-{
-	MSG_PUSH	= 0,
-};
-
-/* The client to master protocol. */
-struct packet
-{
-	unsigned char type;
-	unsigned char len;
-	union
-	{
-		unsigned char buf[sizeof(struct winsize)];
-		struct winsize ws;
-	} u;
-};
-
 /*
 ** The master sends a simple stream of text to the attaching clients, without
 ** any protocol. This might change back to the packet based protocol in the
