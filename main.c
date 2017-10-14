@@ -27,9 +27,6 @@
 /* Make sure the binary has a copyright. */
 const char copyright[] = "dtach - version " PACKAGE_VERSION "(C)Copyright 2004-2016 Ned T. Crigler";
 
-/* argv[0] from the program */
-char *progname;
-
 /*
 ** The original terminal settings. Shared between the master and attach
 ** processes. The master uses it to initialize the pty, and the attacher uses
@@ -37,34 +34,21 @@ char *progname;
 */
 struct termios orig_term;
 
-int
-main(int argc, char **argv)
+int main(int argc, char **argv)
 {
-    /* Save the program name */
-    progname = argv[0];
-    ++argv;
-    --argc;
-
-    if (argc < 1) {
-        printf("%s: No command was specified.\n", progname);
-        printf("Try '%s --help' for more information.\n",
-               progname);
-        return 1;
-    }
+    if (argc < 2)
+        errx(EXIT_FAILURE, "No command was specified.");
 
     /* Save the original terminal settings. */
-    if (tcgetattr(0, &orig_term) < 0) {
-        printf("%s: Attaching to a session requires a terminal.\n",
-               progname);
-        return 1;
-    }
+    if (tcgetattr(0, &orig_term) < 0)
+        errx(EXIT_FAILURE, "Attaching to a session requires a terminal.");
 
     int sv[2];
-    if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv) < 0) {
-        printf("%s: socketpair\n", progname);
+    if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv) < 0)
+        err(EXIT_FAILURE, "socketpair");
+
+    if (master_main(&argv[1], sv[0]) != 0)
         return 1;
-    }
-    if (master_main(argv, sv[0]) != 0)
-        return 1;
+
     return attach_main(sv[1]);
 }

@@ -33,8 +33,7 @@
 static struct termios cur_term;
 
 /* Restores the original terminal settings. */
-static void
-restore_term(void)
+static void restore_term(void)
 {
     tcsetattr(0, TCSADRAIN, &orig_term);
 
@@ -44,8 +43,7 @@ restore_term(void)
 }
 
 /* Signal */
-static RETSIGTYPE
-die(int sig)
+static RETSIGTYPE die(int sig)
 {
     /* Print a nice pretty message for some things. */
     if (sig == SIGHUP || sig == SIGINT)

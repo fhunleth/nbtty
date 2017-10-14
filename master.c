@@ -102,7 +102,7 @@ static int init_pty(char **argv, int statusfd)
         else
             printf(EOS "\r\n");
 
-        printf("%s: could not execute %s: %s\r\n", progname,
+        printf("Could not execute %s: %s\r\n",
                *argv, strerror(errno));
         fflush(stdout);
         _exit(127);
@@ -199,10 +199,8 @@ static void client_activity()
 
 /* The master process - It watches over the pty process and the attached */
 /* clients. */
-static void
-master_process(char **argv, int statusfd)
+static void master_process(char **argv, int statusfd)
 {
-
     /* Okay, disassociate ourselves from the original terminal, as we
     ** don't care what happens to it. */
     setsid();
@@ -213,10 +211,9 @@ master_process(char **argv, int statusfd)
         if (statusfd != -1)
             dup2(statusfd, 1);
         if (errno == ENOENT)
-            printf("%s: Could not find a pty.\n", progname);
+            errx(EXIT_FAILURE, "Could not find a pty.");
         else
-            printf("%s: init_pty: %s\n", progname, strerror(errno));
-        exit(EXIT_FAILURE);
+            err(EXIT_FAILURE, "init_pty");
     }
 
     /* Set up some signals. */
@@ -266,8 +263,7 @@ master_process(char **argv, int statusfd)
     }
 }
 
-int
-master_main(char **argv, int s)
+int master_main(char **argv, int s)
 {
     int fd[2] = { -1, -1};
     pid_t pid;
@@ -292,8 +288,7 @@ master_main(char **argv, int s)
     /* Fork off so we can daemonize and such */
     pid = fork();
     if (pid < 0) {
-        printf("%s: fork: %s\n", progname, strerror(errno));
-        return 1;
+        err(EXIT_FAILURE, "fork");
     } else if (pid == 0) {
         /* Child - this becomes the master */
         if (fd[0] != -1)
