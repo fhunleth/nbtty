@@ -10,5 +10,5 @@ SOURCES += main.c \
 
 HEADERS += \
     config.h \
-    dtach.h \
+    nbtty.h \
     ansi.h

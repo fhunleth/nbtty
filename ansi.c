@@ -1,4 +1,4 @@
-#include "dtach.h"
+#include "nbtty.h"
 #include "ansi.h"
 
 /*

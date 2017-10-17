@@ -1,5 +1,5 @@
 /*
-    dtach - A simple program that emulates the detach feature of screen.
+    nbtty - A subset of dtach that makes the terminal nonblocking
     Copyright (C) 2004-2016 Ned T. Crigler
 
     This program is free software; you can redistribute it and/or modify
@@ -16,16 +16,10 @@
     along with this program; if not, write to the Free Software
     Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 */
-#include "dtach.h"
-
-/*
-** dtach is a quick hack, since I wanted the detach feature of screen without
-** all the other crud. It'll work best with full-screen applications, as it
-** does not keep track of the screen or anything like that.
-*/
+#include "nbtty.h"
 
 /* Make sure the binary has a copyright. */
-const char copyright[] = "dtach - version " PACKAGE_VERSION "(C)Copyright 2004-2016 Ned T. Crigler";
+const char copyright[] = "nbtty - version 0.3.0 (C)Copyright 2004-2016 Ned T. Crigler, 2017 Frank Hunleth";
 
 /*
 ** The original terminal settings. Shared between the master and attach

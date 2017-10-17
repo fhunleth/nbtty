@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.3.0
+
+  * More code simplifications
+
 ## v0.2.0
 
   * New features
