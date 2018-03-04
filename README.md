@@ -29,4 +29,3 @@ nbtty <command> [args...]
 Since `nbtty` derives from `dtach`, much of it is Copyright © 2004-2016 Ned T.
 Crigler.  Like `dtach`, `nbtty` is distributed under the General Public License.
 See [COPYING](COPYING) for details.
-
