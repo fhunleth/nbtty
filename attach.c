@@ -91,9 +91,6 @@ int attach_main(int s)
     cur_term.c_cc[VTIME] = 0;
     tcsetattr(0, TCSADRAIN, &cur_term);
 
-    /* Clear the screen. This assumes VT100. */
-    write(STDIN_FILENO, "\33[H\33[J", 6);
-
     /* Wait for things to happen */
     for (;;) {
         fd_set readfds;
