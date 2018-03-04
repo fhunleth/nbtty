@@ -51,5 +51,8 @@ int main(int argc, char **argv)
     if (master_main(&argv[1], sv[0]) != 0)
         return 1;
 
+
+    close(sv[0]);
+
     return attach_main(sv[1]);
 }

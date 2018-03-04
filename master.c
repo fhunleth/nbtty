@@ -79,17 +79,8 @@ static RETSIGTYPE die(int sig)
     exit(EXIT_FAILURE);
 }
 
-/* Sets a file descriptor to non-blocking mode. */
-static int setnonblocking(int fd)
-{
-    int flags = fcntl(fd, F_GETFL);
-    if (flags < 0 || fcntl(fd, F_SETFL, flags | O_NONBLOCK) < 0)
-        return -1;
-    return 0;
-}
-
 /* Initialize the pty structure. */
-static int init_pty(char **argv, int statusfd)
+static int init_pty(char **argv)
 {
     /* Use the original terminal's settings. We don't have to set the
     ** window size here, because the attacher will send it in a packet. */
@@ -104,14 +95,7 @@ static int init_pty(char **argv, int statusfd)
         /* Child.. Execute the program. */
         execvp(*argv, argv);
 
-        /* Report the error to statusfd if we can, or stdout if we
-        ** can't. */
-        if (statusfd != -1)
-            dup2(statusfd, 1);
-        else
-            printf(EOS "\r\n");
-
-        printf("Could not execute %s: %s\r\n",
+        printf(EOS "Could not execute %s: %s\r\n",
                *argv, strerror(errno));
         fflush(stdout);
         _exit(127);
@@ -222,7 +206,7 @@ static void client_activity()
 
 /* The master process - It watches over the pty process and the attached */
 /* clients. */
-static void master_process(char **argv, int statusfd)
+static void master_process(char **argv)
 {
     /* Okay, disassociate ourselves from the original terminal, as we
     ** don't care what happens to it. */
@@ -230,9 +214,7 @@ static void master_process(char **argv, int statusfd)
 
     /* Create a pty in which the process is running. */
     signal(SIGCHLD, die);
-    if (init_pty(argv, statusfd) < 0) {
-        if (statusfd != -1)
-            dup2(statusfd, 1);
+    if (init_pty(argv) < 0) {
         if (errno == ENOENT)
             errx(EXIT_FAILURE, "Could not find a pty.");
         else
@@ -247,10 +229,6 @@ static void master_process(char **argv, int statusfd)
     signal(SIGTTOU, SIG_IGN);
     signal(SIGINT, die);
     signal(SIGTERM, die);
-
-    /* Close statusfd, since we don't need it anymore. */
-    if (statusfd != -1)
-        close(statusfd);
 
     /* Make sure stdin/stdout/stderr point to /dev/null. We are now a
     ** daemon. */
@@ -288,53 +266,26 @@ static void master_process(char **argv, int statusfd)
 
 int master_main(char **argv, int s)
 {
-    int fd[2] = { -1, -1};
-    pid_t pid;
-
     ansi_reset_parser();
 
-    fcntl(s, F_SETFD, FD_CLOEXEC);
+    if (fcntl(s, F_SETFD, FD_CLOEXEC) < 0)
+        err(EXIT_FAILURE, "fcnt(F_SETFD, FD_CLOEXEC)");
 
-    if (pipe(fd) >= 0) {
-        if (fcntl(fd[0], F_SETFD, FD_CLOEXEC) < 0 ||
-                fcntl(fd[1], F_SETFD, FD_CLOEXEC) < 0) {
-            close(fd[0]);
-            close(fd[1]);
-            fd[0] = fd[1] = -1;
-        }
-    }
+    int flags = fcntl(s, F_GETFL);
+    if (flags < 0 || fcntl(s, F_SETFL, flags | O_NONBLOCK) < 0)
+        err(EXIT_FAILURE, "fcnt(F_SETFL, 0x%x | O_NONBLOCK)", flags);
 
-    setnonblocking(s);
     client_fd = s;
 
     /* Fork off so we can daemonize and such */
-    pid = fork();
+    pid_t pid = fork();
     if (pid < 0) {
         err(EXIT_FAILURE, "fork");
     } else if (pid == 0) {
         /* Child - this becomes the master */
-        if (fd[0] != -1)
-            close(fd[0]);
-        master_process(argv, fd[1]);
+        master_process(argv);
         return 0;
     }
     /* Parent - just return. */
-
-    /* Check if an error occurred while trying to execute the program. */
-    if (fd[0] != -1) {
-        char buf[1024];
-        ssize_t len;
-
-        close(fd[1]);
-        len = read(fd[0], buf, sizeof(buf));
-        if (len > 0) {
-            write(STDERR_FILENO, buf, len);
-            kill(pid, SIGTERM);
-            return 1;
-        }
-        close(fd[0]);
-    }
-
-    close(s);
     return 0;
 }
