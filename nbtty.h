@@ -21,30 +21,6 @@
 
 #include <config.h>
 
-#include <errno.h>
-#include <fcntl.h>
-#include <signal.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-
-#ifdef HAVE_PTY_H
-#include <pty.h>
-#endif
-
-#ifdef HAVE_UNISTD_H
-#include <unistd.h>
-#endif
-
-#ifdef HAVE_SYS_IOCTL_H
-#include <sys/ioctl.h>
-#endif
-
-#include <termios.h>
-#include <sys/select.h>
-#include <sys/socket.h>
-#include <err.h>
-
 extern struct termios orig_term;
 
 /*

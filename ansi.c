@@ -1,6 +1,8 @@
 #include "nbtty.h"
 #include "ansi.h"
 
+#include <string.h>
+
 /*
  * This escape sequence does the following:
  * 1. Saves the cursor position
@@ -160,12 +162,10 @@ void ansi_reset_parser()
 }
 
 /**
- * Send the ANSI sequence to get the window size.
- *
- * @param fd where to send it
- * @return -1 and errno if it failed
+ * Copy the ANSI sequence to get the window size into a buffer
  */
-int ansi_size_request(int fd)
+size_t ansi_size_request(unsigned char *dest)
 {
-    return write(fd, window_size_sequence, sizeof(window_size_sequence) - 1);
+    memcpy(dest, window_size_sequence, sizeof(window_size_sequence) - 1);
+    return sizeof(window_size_sequence) - 1;
 }

@@ -19,6 +19,18 @@
 #include "nbtty.h"
 #include "ansi.h"
 
+#include <err.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <pty.h>
+#include <signal.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+#include <termios.h>
+#include <time.h>
+#include <unistd.h>
+
 //#define REPORT_BYTES_DROPPED
 
 /* The pty struct - The pty information is stored here. */
@@ -36,12 +48,26 @@ struct pty {
 
 /* The connected client. */
 static int client_fd = -1;
+
 /* The pseudo-terminal created for the child process. */
 static struct pty the_pty;
+static uint32_t next_poll_time = 0;
+
+/* This gets set to true when it's time to poll the window size again */
+static int poll_window_size = 0;
 
 #ifdef REPORT_BYTES_DROPPED
 int bytes_dropped = 0;
 #endif
+
+static uint32_t now()
+{
+    static uint32_t counter = 0;
+    struct timespec tp;
+    if (clock_gettime(CLOCK_MONOTONIC, &tp) < 0)
+        return counter++;
+    return (uint32_t) tp.tv_sec;
+}
 
 /* Signal */
 static RETSIGTYPE die(int sig)
@@ -101,12 +127,22 @@ static void pty_activity()
     unsigned char buf[BUFSIZE];
     ssize_t len;
 
+    size_t bytes_to_read = sizeof(buf);
+    if (poll_window_size)
+        bytes_to_read -= ANSI_MAX_RESPONSE_LEN;
+
     /* Read the pty activity */
-    len = read(the_pty.fd, buf, sizeof(buf));
+    len = read(the_pty.fd, buf, bytes_to_read);
 
     /* Error -> die */
     if (len <= 0)
         exit(EXIT_FAILURE);
+
+    /* If we need to poll the window size, tack the request onto the buffer */
+    if (poll_window_size) {
+        len += ansi_size_request(&buf[len]);
+        poll_window_size = 0;
+    }
 
     /* Get the current terminal settings. */
     if (tcgetattr(the_pty.fd, &the_pty.term) < 0)
@@ -129,13 +165,6 @@ static void pty_activity()
 #endif
         ssize_t n = write(client_fd, buf + written, len - written);
         if (n > 0) {
-            if (n == len && len < 80 && buf[len - 1] == '\n') {
-                // Everything wrote in one go and there was a
-                // new line, so check window size.
-                // TODO: Figure out a better heuristic. Perhaps check for the width no more than x times per minute, etc.
-                ansi_size_request(client_fd);
-            }
-
             written += n;
             if (written == len)
                 break;
@@ -160,7 +189,7 @@ static void client_activity()
     unsigned char buf[BUFSIZE];
 
     /* Read the activity. */
-    ssize_t len = read(client_fd, buf, sizeof(buf));
+    ssize_t len = read(client_fd, buf, sizeof(buf) - ANSI_MAX_RESPONSE_LEN);
     if (len < 0 && (errno == EAGAIN || errno == EINTR))
         return;
 
@@ -171,8 +200,19 @@ static void client_activity()
         return;
     }
 
+    /* Check if we should poll the window size */
+    if (memchr(buf, '\r', len) != NULL) {
+        uint32_t current_seconds = now();
+
+        /* poll the window size at most every 5 seconds */
+        if (next_poll_time - current_seconds > 5) {
+            poll_window_size = 1;
+            next_poll_time = current_seconds + 5;
+        }
+    }
+
     /* Push out data to the program. */
-    unsigned char output[sizeof(buf) + ANSI_MAX_RESPONSE_LEN];
+    unsigned char output[BUFSIZE];
     size_t output_size;
     if (ansi_process_input(buf, len, output, &output_size, &the_pty.ws))
         ioctl(the_pty.fd, TIOCSWINSZ, &the_pty.ws);

@@ -18,6 +18,13 @@
 */
 #include "nbtty.h"
 
+#include <err.h>
+#include <stdlib.h>
+#include <termios.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+
 /* Make sure the binary has a copyright. */
 const char copyright[] = "nbtty - version 0.3.0 (C)Copyright 2004-2016 Ned T. Crigler, 2017 Frank Hunleth";
 
