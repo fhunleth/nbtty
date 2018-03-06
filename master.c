@@ -31,6 +31,8 @@
 #include <time.h>
 #include <unistd.h>
 
+#include <sys/select.h>
+
 //#define REPORT_BYTES_DROPPED
 
 /* The pty struct - The pty information is stored here. */

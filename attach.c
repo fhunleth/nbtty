@@ -25,6 +25,8 @@
 #include <termios.h>
 #include <unistd.h>
 
+#include <sys/select.h>
+
 #ifndef VDISABLE
 #ifdef _POSIX_VDISABLE
 #define VDISABLE _POSIX_VDISABLE
