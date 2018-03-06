@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.3.2
+
+* Fix missing include with Musl
+
 ## v0.3.1
 
 * Reduce window size polling by triggering it on input from the user rather than
