@@ -24,6 +24,25 @@ your code, sorry, I kind of butchered it.
 nbtty <command> [args...]
 ```
 
+## Building
+
+You need some build tools for this project. In Ubuntu, you can install them
+with the following:
+
+```sh
+sudo apt install build-essential automake autoconf
+```
+
+To build:
+
+```sh
+./autogen.sh
+./configure
+make
+```
+
+At the end of the commands, you will have `nbtty` in the project root directory.
+
 ## License
 
 Since `nbtty` derives from `dtach`, much of it is Copyright © 2004-2016 Ned T.
