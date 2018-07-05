@@ -41,9 +41,6 @@ struct pty {
     int fd;
     /* Process id of the child. */
     pid_t pid;
-    /* The terminal parameters of the pty. Old and new for comparision
-    ** purposes. */
-    struct termios term;
     /* The current window size of the pty. */
     struct winsize ws;
 };
@@ -84,13 +81,10 @@ static RETSIGTYPE die(int sig)
 /* Initialize the pty structure. */
 static int init_pty(char **argv)
 {
-    /* Use the original terminal's settings. We don't have to set the
-    ** window size here, because the attacher will send it in a packet. */
-    the_pty.term = orig_term;
     memset(&the_pty.ws, 0, sizeof(struct winsize));
 
     /* Create the pty process */
-    the_pty.pid = forkpty(&the_pty.fd, NULL, &the_pty.term, NULL);
+    the_pty.pid = forkpty(&the_pty.fd, NULL, &orig_term, NULL);
     if (the_pty.pid < 0)
         return -1;
     else if (the_pty.pid == 0) {
@@ -129,10 +123,6 @@ static void pty_activity()
         len += ansi_size_request(&buf[len]);
         poll_window_size = 0;
     }
-
-    /* Get the current terminal settings. */
-    if (tcgetattr(the_pty.fd, &the_pty.term) < 0)
-        exit(EXIT_FAILURE);
 
     ssize_t written = 0;
     int retries = 0;
