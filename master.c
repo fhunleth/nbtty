@@ -32,6 +32,7 @@
 #include <unistd.h>
 
 #include <sys/select.h>
+#include <sys/wait.h>
 
 //#define REPORT_BYTES_DROPPED
 
@@ -72,8 +73,14 @@ static uint32_t now()
 static RETSIGTYPE die(int sig)
 {
     /* Well, the child died. */
-    if (sig == SIGCHLD)
-        return;
+    if (sig == SIGCHLD) {
+        /* Call waitpid to avoid init having to reap a zombie orphan. (Reduces
+         * noise when debugging erlinit) */
+        waitpid(the_pty.pid, NULL, WNOHANG);
+
+        /* Clean up the pty by closing it (Technically unnecessary since we're exiting shortly) */
+        close(the_pty.fd);
+    }
 
     exit(EXIT_FAILURE);
 }
@@ -244,7 +251,7 @@ static void master_process(char **argv)
         if (select(highest_fd + 1, &readfds, NULL, NULL, NULL) < 0) {
             if (errno == EINTR || errno == EAGAIN)
                 continue;
-            exit(1);
+            exit(EXIT_FAILURE);
         }
 
         /* Activity on a client? */
