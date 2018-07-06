@@ -249,7 +249,7 @@ static void master_process(char **argv)
 
         /* Wait for something to happen. */
         if (select(highest_fd + 1, &readfds, NULL, NULL, NULL) < 0) {
-            if (errno == EINTR || errno == EAGAIN)
+            if (errno == EINTR)
                 continue;
             exit(EXIT_FAILURE);
         }
