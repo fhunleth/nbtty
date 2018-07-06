@@ -20,10 +20,11 @@
 
 #include <err.h>
 #include <stdlib.h>
-#include <termios.h>
-#include <unistd.h>
+#include <string.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <termios.h>
+#include <unistd.h>
 
 /* Make sure the binary has a copyright. */
 const char copyright[] = "nbtty - version 0.3.0 (C)Copyright 2004-2016 Ned T. Crigler, 2017 Frank Hunleth";
@@ -38,21 +39,31 @@ struct termios orig_term;
 int main(int argc, char **argv)
 {
     if (argc < 2)
-        errx(EXIT_FAILURE, "No command was specified.");
+        errx(EXIT_FAILURE, "%s [--tty <path>] <command> [args...]", argv[0]);
 
     /* Save the original terminal settings. */
-    if (tcgetattr(0, &orig_term) < 0)
+    if (tcgetattr(STDIN_FILENO, &orig_term) < 0)
         errx(EXIT_FAILURE, "Attaching to a session requires a terminal.");
 
     int sv[2];
     if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv) < 0)
         err(EXIT_FAILURE, "socketpair");
 
-    if (master_main(&argv[1], sv[0]) != 0)
+    const char *ttypath;
+    char **cmd_argv;
+    if (argc >= 3 && strcmp(argv[1], "--tty") == 0) {
+        // User-specified tty to use
+        ttypath = argv[2];
+        cmd_argv = &argv[3];
+    } else {
+        // Use the default tty (stdin)
+        cmd_argv = &argv[1];
+        ttypath = NULL;
+    }
+    if (master_main(cmd_argv, sv[0]) != 0)
         return 1;
-
 
     close(sv[0]);
 
-    return attach_main(sv[1]);
+    return attach_main(sv[1], ttypath);
 }

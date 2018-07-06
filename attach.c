@@ -18,14 +18,16 @@
 */
 #include "nbtty.h"
 
+#include <fcntl.h>
 #include <errno.h>
 #include <signal.h>
-#include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <sys/select.h>
 #include <termios.h>
 #include <unistd.h>
-
-#include <sys/select.h>
 
 #ifndef VDISABLE
 #ifdef _POSIX_VDISABLE
@@ -40,29 +42,66 @@
 ** restore this.
 */
 static struct termios cur_term;
+static int tty_in = STDIN_FILENO;
+static int tty_out = STDOUT_FILENO;
+
+static ssize_t write_string(int fd, const char *str)
+{
+    return write(fd, str, strlen(str));
+}
 
 /* Restores the original terminal settings. */
 static void restore_term(void)
 {
-    tcsetattr(0, TCSADRAIN, &orig_term);
+    tcsetattr(tty_in, TCSADRAIN, &orig_term);
 
     /* Make cursor visible. Assumes VT100. */
-    printf("\033[?25h");
-    fflush(stdout);
+    write_string(tty_out, "\033[?25h");
 }
 
 /* Signal */
 static RETSIGTYPE die(int sig)
 {
-    /* Print a nice pretty message for some things. */
-    if (sig == SIGHUP || sig == SIGINT)
-        printf(EOS "\r\n[detached]\r\n");
-    else
-        printf(EOS "\r\n[got signal %d - dying]\r\n", sig);
+    (void) sig;
+    write_string(tty_out, EOS "\r\n[got signal - dying]\r\n");
     exit(EXIT_FAILURE);
 }
 
-int attach_main(int s)
+static void open_tty(const char *ttypath)
+{
+    if (ttypath == NULL || strcmp(ttypath, "-") == 0) {
+        // Check if we're using stdin
+        tty_in = STDIN_FILENO;
+        tty_out = STDOUT_FILENO;
+    } else {
+        // Open the tty or retry until it works
+        for (;;) {
+            int fd = open(ttypath, O_RDWR | O_CLOEXEC);
+            if (fd >= 0) {
+                tty_in = fd;
+                tty_out = fd;
+                break;
+            }
+
+            // Try again in a second?
+            sleep(1);
+        }
+    }
+
+    /* Set raw mode. */
+    cur_term.c_iflag &= ~(IGNBRK | BRKINT | PARMRK | ISTRIP | INLCR | IGNCR | ICRNL);
+    cur_term.c_iflag &= ~(IXON | IXOFF);
+    cur_term.c_oflag &= ~(OPOST);
+    cur_term.c_lflag &= ~(ECHO | ECHONL | ICANON | ISIG | IEXTEN);
+    cur_term.c_cflag &= ~(CSIZE | PARENB);
+    cur_term.c_cflag |= CS8;
+    cur_term.c_cc[VLNEXT] = VDISABLE;
+    cur_term.c_cc[VMIN] = 1;
+    cur_term.c_cc[VTIME] = 0;
+    tcsetattr(tty_in, TCSADRAIN, &cur_term);
+}
+
+int attach_main(int s, const char *ttypath)
 {
     unsigned char buf[BUFSIZE];
 
@@ -81,28 +120,22 @@ int attach_main(int s)
     signal(SIGINT, die);
     signal(SIGQUIT, die);
 
-    /* Set raw mode. */
-    cur_term.c_iflag &= ~(IGNBRK | BRKINT | PARMRK | ISTRIP | INLCR | IGNCR | ICRNL);
-    cur_term.c_iflag &= ~(IXON | IXOFF);
-    cur_term.c_oflag &= ~(OPOST);
-    cur_term.c_lflag &= ~(ECHO | ECHONL | ICANON | ISIG | IEXTEN);
-    cur_term.c_cflag &= ~(CSIZE | PARENB);
-    cur_term.c_cflag |= CS8;
-    cur_term.c_cc[VLNEXT] = VDISABLE;
-    cur_term.c_cc[VMIN] = 1;
-    cur_term.c_cc[VTIME] = 0;
-    tcsetattr(0, TCSADRAIN, &cur_term);
+    open_tty(ttypath);
 
     /* Wait for things to happen */
     for (;;) {
         fd_set readfds;
         FD_ZERO(&readfds);
-        FD_SET(STDIN_FILENO, &readfds);
+        FD_SET(tty_in, &readfds);
         FD_SET(s, &readfds);
-        int n = select(s + 1, &readfds, NULL, NULL, NULL);
-        if (n < 0 && errno != EINTR && errno != EAGAIN) {
-            printf(EOS "\r\n[select failed]\r\n");
-            exit(EXIT_FAILURE);
+        int highest_fd = tty_in > s ? tty_in : s;
+        int n = select(highest_fd + 1, &readfds, NULL, NULL, NULL);
+        if (n < 0) {
+            if (errno != EINTR) {
+                write_string(tty_out, EOS "\r\n[select failed]\r\n");
+                exit(EXIT_FAILURE);
+            }
+            continue;
         }
 
         /* Pty activity */
@@ -110,21 +143,25 @@ int attach_main(int s)
             ssize_t len = read(s, buf, sizeof(buf));
 
             if (len == 0) {
-                printf(EOS "\r\n[EOF - nbtty terminating]\r\n");
+                write_string(tty_out, EOS "\r\n[EOF - nbtty terminating]\r\n");
                 exit(EXIT_SUCCESS);
             } else if (len < 0) {
-                printf(EOS "\r\n[read returned an error]\r\n");
+                write_string(tty_out, EOS "\r\n[read returned an error]\r\n");
                 exit(EXIT_FAILURE);
             }
             /* Send the data to the terminal. */
-            write(STDOUT_FILENO, buf, len);
+            write(tty_out, buf, len);
             n--;
         }
-        /* stdin activity */
-        if (n > 0 && FD_ISSET(STDIN_FILENO, &readfds)) {
-            ssize_t len = read(STDIN_FILENO, buf, sizeof(buf));
-            if (len <= 0)
-                exit(EXIT_FAILURE);
+        /* User activity */
+        if (n > 0 && FD_ISSET(tty_in, &readfds)) {
+            ssize_t len = read(tty_in, buf, sizeof(buf));
+            if (len <= 0) {
+                if (tty_in == STDIN_FILENO)
+                    exit(EXIT_FAILURE);
+                open_tty(ttypath);
+                continue;
+            }
 
             write(s, buf, len);
             n--;

@@ -21,8 +21,13 @@ your code, sorry, I kind of butchered it.
 ## Usage
 
 ```sh
-nbtty <command> [args...]
+nbtty [--tty <tty path>] <command> [args...]
 ```
+
+If you specify `--tty`, `nbtty` will use that tty instead of stdin/stdout. It
+will additionally retry opening the tty if it doesn't exist on start. This is
+useful for getting around the problem where Elixir code initializes a tty that's
+provides the main console.
 
 ## Building
 

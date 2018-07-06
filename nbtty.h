@@ -35,7 +35,7 @@ extern struct termios orig_term;
 /* This hopefully moves to the bottom of the screen */
 #define EOS "\033[999H"
 
-int attach_main(int s);
+int attach_main(int s, const char *ttypath);
 int master_main(char **argv, int s);
 
 #endif
