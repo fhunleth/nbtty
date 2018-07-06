@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.4.0
+
+* New features
+  * Support `--tty` option to use a specified tty device. This will be retried
+    if it doesn't exist at start. Needed for configfs configuration of the
+    gadget USB interface.
+
+* Bug fixes
+  * Exit on SIGCHLD from the launched process. It appears to be unreliable to
+    detect exit based on tty EOF.
+
 ## v0.3.2
 
 * Fix missing include with Musl
