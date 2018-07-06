@@ -21,8 +21,6 @@
 
 #include <config.h>
 
-extern struct termios orig_term;
-
 /*
 ** The master sends a simple stream of text to the attaching clients, without
 ** any protocol. This might change back to the packet based protocol in the

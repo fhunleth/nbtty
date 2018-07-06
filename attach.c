@@ -18,6 +18,7 @@
 */
 #include "nbtty.h"
 
+#include <err.h>
 #include <fcntl.h>
 #include <errno.h>
 #include <signal.h>
@@ -38,10 +39,10 @@
 #endif
 
 /*
-** The current terminal settings. After coming back from a suspend, we
-** restore this.
+** The original terminal settings. On exit, we restore this.
 */
-static struct termios cur_term;
+static struct termios orig_term;
+
 static int tty_in = STDIN_FILENO;
 static int tty_out = STDOUT_FILENO;
 
@@ -69,6 +70,10 @@ static RETSIGTYPE die(int sig)
 
 static void open_tty(const char *ttypath)
 {
+    // If already open, the close the handle.
+    if (tty_in != STDIN_FILENO)
+        close(tty_in);
+
     if (ttypath == NULL || strcmp(ttypath, "-") == 0) {
         // Check if we're using stdin
         tty_in = STDIN_FILENO;
@@ -88,30 +93,26 @@ static void open_tty(const char *ttypath)
         }
     }
 
+    /* Save the original terminal settings. */
+    if (tcgetattr(tty_in, &orig_term) < 0)
+        errx(EXIT_FAILURE, "Attaching to a session requires a terminal.");
+
     /* Set raw mode. */
-    cur_term.c_iflag &= ~(IGNBRK | BRKINT | PARMRK | ISTRIP | INLCR | IGNCR | ICRNL);
-    cur_term.c_iflag &= ~(IXON | IXOFF);
-    cur_term.c_oflag &= ~(OPOST);
-    cur_term.c_lflag &= ~(ECHO | ECHONL | ICANON | ISIG | IEXTEN);
-    cur_term.c_cflag &= ~(CSIZE | PARENB);
-    cur_term.c_cflag |= CS8;
-    cur_term.c_cc[VLNEXT] = VDISABLE;
-    cur_term.c_cc[VMIN] = 1;
-    cur_term.c_cc[VTIME] = 0;
-    tcsetattr(tty_in, TCSADRAIN, &cur_term);
+    struct termios new_term = orig_term;
+    new_term.c_iflag &= ~(IGNBRK | BRKINT | PARMRK | ISTRIP | INLCR | IGNCR | ICRNL);
+    new_term.c_iflag &= ~(IXON | IXOFF);
+    new_term.c_oflag &= ~(OPOST);
+    new_term.c_lflag &= ~(ECHO | ECHONL | ICANON | ISIG | IEXTEN);
+    new_term.c_cflag &= ~(CSIZE | PARENB);
+    new_term.c_cflag |= CS8;
+    new_term.c_cc[VLNEXT] = VDISABLE;
+    new_term.c_cc[VMIN] = 1;
+    new_term.c_cc[VTIME] = 0;
+    tcsetattr(tty_in, TCSADRAIN, &new_term);
 }
 
 int attach_main(int s, const char *ttypath)
 {
-    unsigned char buf[BUFSIZE];
-
-    /* The current terminal settings are equal to the original terminal
-    ** settings at this point. */
-    cur_term = orig_term;
-
-    /* Set a trap to restore the terminal when we die. */
-    atexit(restore_term);
-
     /* Set some signals. */
     signal(SIGPIPE, SIG_IGN);
     signal(SIGXFSZ, SIG_IGN);
@@ -122,15 +123,19 @@ int attach_main(int s, const char *ttypath)
 
     open_tty(ttypath);
 
+    /* Set a trap to restore the terminal when we die. */
+    atexit(restore_term);
+
     /* Wait for things to happen */
     for (;;) {
+        unsigned char buf[BUFSIZE];
         fd_set readfds;
         FD_ZERO(&readfds);
         FD_SET(tty_in, &readfds);
         FD_SET(s, &readfds);
         int highest_fd = tty_in > s ? tty_in : s;
-        int n = select(highest_fd + 1, &readfds, NULL, NULL, NULL);
-        if (n < 0) {
+        int rc = select(highest_fd + 1, &readfds, NULL, NULL, NULL);
+        if (rc < 0) {
             if (errno != EINTR) {
                 write_string(tty_out, EOS "\r\n[select failed]\r\n");
                 exit(EXIT_FAILURE);
@@ -139,7 +144,7 @@ int attach_main(int s, const char *ttypath)
         }
 
         /* Pty activity */
-        if (n > 0 && FD_ISSET(s, &readfds)) {
+        if (FD_ISSET(s, &readfds)) {
             ssize_t len = read(s, buf, sizeof(buf));
 
             if (len == 0) {
@@ -151,10 +156,10 @@ int attach_main(int s, const char *ttypath)
             }
             /* Send the data to the terminal. */
             write(tty_out, buf, len);
-            n--;
         }
+
         /* User activity */
-        if (n > 0 && FD_ISSET(tty_in, &readfds)) {
+        if (FD_ISSET(tty_in, &readfds)) {
             ssize_t len = read(tty_in, buf, sizeof(buf));
             if (len <= 0) {
                 if (tty_in == STDIN_FILENO)
@@ -164,8 +169,8 @@ int attach_main(int s, const char *ttypath)
             }
 
             write(s, buf, len);
-            n--;
         }
     }
+
     return 0;
 }
