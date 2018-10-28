@@ -76,7 +76,7 @@ static void restore_term(void)
 static RETSIGTYPE die(int sig)
 {
     (void) sig;
-    write_string(tty_out, EOS "\r\n[got signal - dying]\r\n");
+    write_string(tty_out, EOS "\r\n[nbtty: terminating via signal]\r\n");
     exit(EXIT_FAILURE);
 }
 
@@ -151,7 +151,7 @@ int attach_main(int s, const char *ttypath, int wait_input)
         int rc = select(highest_fd + 1, &readfds, NULL, NULL, NULL);
         if (rc < 0) {
             if (errno != EINTR) {
-                write_string(tty_out, EOS "\r\n[select failed]\r\n");
+                write_string(tty_out, EOS "\r\n[nbtty: select failed]\r\n");
                 exit(EXIT_FAILURE);
             }
             continue;
@@ -162,10 +162,10 @@ int attach_main(int s, const char *ttypath, int wait_input)
             ssize_t len = read(s, buf, sizeof(buf));
 
             if (len == 0) {
-                write_string(tty_out, EOS "\r\n[EOF - nbtty terminating]\r\n");
+                write_string(tty_out, EOS "\r\n[nbtty: terminating]\r\n");
                 exit(EXIT_SUCCESS);
             } else if (len < 0) {
-                write_string(tty_out, EOS "\r\n[read returned an error]\r\n");
+                write_string(tty_out, EOS "\r\n[nbtty: read returned an error]\r\n");
                 exit(EXIT_FAILURE);
             }
             /* Send the data to the terminal. */
@@ -185,6 +185,7 @@ int attach_main(int s, const char *ttypath, int wait_input)
             if (terminal_active) {
                 write_buffer(s, buf, (size_t) len);
             } else if (memchr(buf, '\r', (size_t) len)) {
+                /* Activate the terminal on carriage return */
                 terminal_active = 1;
                 write_string(tty_out, EOS "\r\n");
             }
