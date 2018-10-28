@@ -21,13 +21,18 @@ your code, sorry, I kind of butchered it.
 ## Usage
 
 ```sh
-nbtty [--tty <tty path>] <command> [args...]
+nbtty [--tty <tty path>|--wait-input] <command> [args...]
 ```
 
-If you specify `--tty`, `nbtty` will use that tty instead of stdin/stdout. It
+Specify `--tty` for `nbtty` to use a specific tty instead of stdin/stdout. It
 will additionally retry opening the tty if it doesn't exist on start. This is
 useful for getting around the problem where Elixir code initializes a tty that
 provides the main console.
+
+Specify `--wait-input` to not send any output to the tty until a carriage return
+is received (user presses the enter key). This is useful if don't expect anyone
+to be at the console and want to minimize the risk of garbage being received and
+processed.
 
 ## Building
 

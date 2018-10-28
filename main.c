@@ -19,6 +19,7 @@
 #include "nbtty.h"
 
 #include <err.h>
+#include <getopt.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/types.h>
@@ -30,30 +31,51 @@
 /* Make sure the binary has a copyright. */
 const char copyright[] = "nbtty - version 0.3.0 (C)Copyright 2004-2016 Ned T. Crigler, 2017 Frank Hunleth";
 
+static void usage()
+{
+    errx(EXIT_FAILURE, "nbtty [--tty <path>|--wait-input] <command> [args...]");
+}
+
 int main(int argc, char **argv)
 {
-    if (argc < 2)
-        errx(EXIT_FAILURE, "%s [--tty <path>] <command> [args...]", argv[0]);
+    const char *ttypath = NULL;
+    int wait_input = 0;
+
+    for (;;) {
+        static struct option long_options[] = {
+            {"tty",     required_argument, 0,  't' },
+            {"wait-input",  no_argument,   0,  'w' },
+            {0,         0,                 0,  0 }
+        };
+
+        int c = getopt_long(argc, argv, "+tw", long_options, NULL);
+        if (c == -1)
+            break;
+
+        switch (c) {
+        case 't':
+            ttypath = optarg;
+            break;
+
+        case 'w':
+            wait_input = 1;
+            break;
+        default:
+            usage();
+        }
+     }
+
+    if (optind == argc)
+        usage();
 
     int sv[2];
     if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv) < 0)
         err(EXIT_FAILURE, "socketpair");
 
-    const char *ttypath;
-    char **cmd_argv;
-    if (argc >= 3 && strcmp(argv[1], "--tty") == 0) {
-        // User-specified tty to use
-        ttypath = argv[2];
-        cmd_argv = &argv[3];
-    } else {
-        // Use the default tty (stdin)
-        cmd_argv = &argv[1];
-        ttypath = NULL;
-    }
-    if (master_main(cmd_argv, sv[0]) != 0)
+    if (master_main(&argv[optind], sv[0]) != 0)
         return 1;
 
     close(sv[0]);
 
-    return attach_main(sv[1], ttypath);
+    return attach_main(sv[1], ttypath, wait_input);
 }

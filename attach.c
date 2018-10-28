@@ -46,10 +46,22 @@ static struct termios orig_term;
 static int tty_in = STDIN_FILENO;
 static int tty_out = STDOUT_FILENO;
 
+static int terminal_active = 1;
+
+/* Ignore the return code of write. This works around a compiler warning */
+static ssize_t write_buffer(int fd, const unsigned char *buffer, size_t len)
+{
+    if (terminal_active)
+        return write(fd, buffer, len);
+    else
+        return (ssize_t) len;
+}
+
 static ssize_t write_string(int fd, const char *str)
 {
-    return write(fd, str, strlen(str));
+    return write_buffer(fd, (const unsigned char *) str, strlen(str));
 }
+
 
 /* Restores the original terminal settings. */
 static void restore_term(void)
@@ -111,8 +123,10 @@ static void open_tty(const char *ttypath)
     tcsetattr(tty_in, TCSADRAIN, &new_term);
 }
 
-int attach_main(int s, const char *ttypath)
+int attach_main(int s, const char *ttypath, int wait_input)
 {
+    terminal_active = !wait_input;
+
     /* Set some signals. */
     signal(SIGPIPE, SIG_IGN);
     signal(SIGXFSZ, SIG_IGN);
@@ -155,7 +169,7 @@ int attach_main(int s, const char *ttypath)
                 exit(EXIT_FAILURE);
             }
             /* Send the data to the terminal. */
-            write(tty_out, buf, (size_t) len);
+            write_buffer(tty_out, buf, (size_t) len);
         }
 
         /* User activity */
@@ -168,7 +182,12 @@ int attach_main(int s, const char *ttypath)
                 continue;
             }
 
-            write(s, buf, (size_t) len);
+            if (terminal_active) {
+                write_buffer(s, buf, (size_t) len);
+            } else if (memchr(buf, '\r', (size_t) len)) {
+                terminal_active = 1;
+                write_string(tty_out, EOS "\r\n");
+            }
         }
     }
 }
