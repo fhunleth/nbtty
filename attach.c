@@ -155,7 +155,7 @@ int attach_main(int s, const char *ttypath)
                 exit(EXIT_FAILURE);
             }
             /* Send the data to the terminal. */
-            write(tty_out, buf, len);
+            write(tty_out, buf, (size_t) len);
         }
 
         /* User activity */
@@ -168,9 +168,7 @@ int attach_main(int s, const char *ttypath)
                 continue;
             }
 
-            write(s, buf, len);
+            write(s, buf, (size_t) len);
         }
     }
-
-    return 0;
 }
