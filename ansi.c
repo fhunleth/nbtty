@@ -144,7 +144,7 @@ int ansi_process_input(const unsigned char *input, size_t input_size,
             }
         }
     }
-    *output_size = out - output;
+    *output_size = (size_t) (out - output);
 
     if (ansi_parser.ws.ws_col != 0 &&
             ansi_parser.ws.ws_col != ws->ws_col &&
