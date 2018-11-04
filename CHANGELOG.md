@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.4.1
+
+* Bug fixes
+  * Add option to not write to the terminal until the user presses enter. This
+    is useful for the USB interface where sometimes characters written to the
+    output get looped back.
+  * Switch to more traditional automake setup so that `make dist` and `make
+    install` work
+
 ## v0.4.0
 
 * New features
