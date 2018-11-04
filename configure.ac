@@ -1,16 +1,10 @@
 # Process this file with autoconf to produce a configure script.
-AC_INIT(nbtty, 0.1, fhunleth@troodon-software.com)
+AC_INIT(nbtty, 0.4.1, fhunleth@troodon-software.com)
 AC_PREREQ(2.60)
-AC_CONFIG_SRCDIR(main.c)
-AC_CONFIG_HEADER(config.h)
+AM_INIT_AUTOMAKE([-Wall foreign])
 
 # Checks for programs.
 AC_PROG_CC
-AC_PROG_GCC_TRADITIONAL
-
-if test "$GCC" = yes; then
-	CFLAGS="$CFLAGS -W -Wall";
-fi
 
 # Checks for libraries.
 AC_CHECK_LIB(util, forkpty)
@@ -30,5 +24,5 @@ AC_CHECK_FUNCS(atexit dup2 memset)
 AC_CHECK_FUNCS(select socket strerror)
 AC_CHECK_FUNCS(forkpty)
 
-AC_CONFIG_FILES(Makefile)
+AC_CONFIG_FILES([Makefile config.h])
 AC_OUTPUT

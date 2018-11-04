@@ -70,7 +70,7 @@ static uint32_t now()
 }
 
 /* Signal */
-static RETSIGTYPE die(int sig)
+static void die(int sig)
 {
     /* Well, the child died. */
     if (sig == SIGCHLD) {

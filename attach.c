@@ -73,7 +73,7 @@ static void restore_term(void)
 }
 
 /* Signal */
-static RETSIGTYPE die(int sig)
+static void die(int sig)
 {
     (void) sig;
     write_string(tty_out, EOS "\r\n[nbtty: terminating via signal]\r\n");
