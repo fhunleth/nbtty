@@ -238,7 +238,9 @@ int attach_main(int s, const char **ttypaths, int n_ttys, int wait_input)
                 if (terminal_active) {
                     write_buffer(s, buf, (size_t) len);
                 } else if (memchr(buf, '\r', (size_t) len)) {
-                    /* Activate the terminal on carriage return and forward the input */
+                    /* Activate the terminal on carriage return and forward the input.
+                    ** This ensures user input (including the carriage return) is sent
+                    ** to the child process when the terminal becomes active. */
                     terminal_active = 1;
                     write_string_to_all(EOS "\r\n");
                     write_buffer(s, buf, (size_t) len);
