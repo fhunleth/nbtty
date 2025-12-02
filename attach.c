@@ -106,7 +106,7 @@ static void open_tty(int tty_index, const char *ttypath)
         close(tty_in[tty_index]);
 
     if (ttypath == NULL || strcmp(ttypath, "-") == 0) {
-        // Check if we're using stdin
+        // Use stdin/stdout
         tty_in[tty_index] = STDIN_FILENO;
         tty_out[tty_index] = STDOUT_FILENO;
     } else {
@@ -159,6 +159,14 @@ int attach_main(int s, const char **ttypaths, int n_ttys, int wait_input)
         tty_paths[0] = NULL;
         open_tty(0, NULL);
     } else {
+        /* Validate that stdin/stdout is not used when multiple TTYs are specified */
+        if (n_ttys > 1) {
+            for (int i = 0; i < n_ttys; i++) {
+                if (ttypaths[i] == NULL || strcmp(ttypaths[i], "-") == 0)
+                    errx(EXIT_FAILURE, "Cannot use stdin/stdout when multiple TTYs are specified. Use explicit tty paths.");
+            }
+        }
+        
         num_ttys = n_ttys;
         for (int i = 0; i < num_ttys; i++) {
             tty_paths[i] = ttypaths[i];
@@ -230,9 +238,10 @@ int attach_main(int s, const char **ttypaths, int n_ttys, int wait_input)
                 if (terminal_active) {
                     write_buffer(s, buf, (size_t) len);
                 } else if (memchr(buf, '\r', (size_t) len)) {
-                    /* Activate the terminal on carriage return */
+                    /* Activate the terminal on carriage return and forward the input */
                     terminal_active = 1;
                     write_string_to_all(EOS "\r\n");
+                    write_buffer(s, buf, (size_t) len);
                 }
             }
         }
