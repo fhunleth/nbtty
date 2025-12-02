@@ -33,12 +33,13 @@ const char copyright[] = "nbtty - version 0.3.0 (C)Copyright 2004-2016 Ned T. Cr
 
 static void usage()
 {
-    errx(EXIT_FAILURE, "nbtty [--tty <path>|--wait-input] <command> [args...]");
+    errx(EXIT_FAILURE, "nbtty [--tty <path>] [--tty <path>] [--wait-input] <command> [args...]");
 }
 
 int main(int argc, char **argv)
 {
-    const char *ttypath = NULL;
+    const char *ttypaths[MAX_TTYS];
+    int num_ttys = 0;
     int wait_input = 0;
 
     for (;;) {
@@ -54,7 +55,9 @@ int main(int argc, char **argv)
 
         switch (c) {
         case 't':
-            ttypath = optarg;
+            if (num_ttys >= MAX_TTYS)
+                errx(EXIT_FAILURE, "Maximum of %d ttys supported", MAX_TTYS);
+            ttypaths[num_ttys++] = optarg;
             break;
 
         case 'w':
@@ -77,5 +80,5 @@ int main(int argc, char **argv)
 
     close(sv[0]);
 
-    return attach_main(sv[1], ttypath, wait_input);
+    return attach_main(sv[1], ttypaths, num_ttys, wait_input);
 }
