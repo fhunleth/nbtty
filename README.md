@@ -21,13 +21,18 @@ your code, sorry, I kind of butchered it.
 ## Usage
 
 ```sh
-nbtty [--tty <tty path>|--wait-input] <command> [args...]
+nbtty [--tty <tty path>] [--tty <tty path>] [--wait-input] <command> [args...]
 ```
 
 Specify `--tty` for `nbtty` to use a specific tty instead of stdin/stdout. It
 will additionally retry opening the tty if it doesn't exist on start. This is
 useful for getting around the problem where Elixir code initializes a tty that
 provides the main console.
+
+You can specify `--tty` multiple times (up to 2 times) to send output to
+multiple terminals. Input will be accepted from any of the specified terminals.
+This is useful for devices with multiple output interfaces, such as Raspberry
+Pis with both debug UARTs and displays.
 
 Specify `--wait-input` to not send any output to the tty until a carriage return
 is received (user presses the enter key). This is useful if don't expect anyone
